@@ -192,7 +192,7 @@ void free_ParamCompList(ParamCompList *ParamGroup, int compCount);
  * @param[in] paramName
  * @return char*  parameter value
  */
-char * getParameterValue(char *paramName);
+//char * getParameterValue(char *paramName);
 
 /**
  * @brief setParameterValue interface handles SET parameter requests in non-atomic way.
@@ -203,7 +203,7 @@ char * getParameterValue(char *paramName);
  * @param[in] type data type
  * @return WDMP_STATUS success or failure status
  */
-WDMP_STATUS setParameterValue(char *paramName, char* value, DATA_TYPE type);
+//WDMP_STATUS setParameterValue(char *paramName, char* value, DATA_TYPE type);
 
 /**
  * @brief ccspWebPaValueChangedCB callback function for set notification

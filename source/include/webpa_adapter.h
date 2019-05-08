@@ -178,6 +178,11 @@ void replaceTable(char *objectName,TableData * list,unsigned int paramcount,WDMP
  */
 void initNotifyTask(int status);
 
+/*
+ * @brief To initiate webConfig Task handling
+ */
+void initWebConfigTask();
+
 void sendNotification(char *payload, char *source, char *destination);
 
 char* parsePayloadForStatus(char *payload);

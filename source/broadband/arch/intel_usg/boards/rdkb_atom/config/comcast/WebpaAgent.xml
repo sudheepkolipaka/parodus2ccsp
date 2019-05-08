@@ -80,5 +80,21 @@
                                 </object> 
                         </objects>
                 </object>
+		<object>
+			 <name>X_RDK_WebConfig</name>
+		        <objectType>object</objectType>
+		        <functions>
+				<func_GetParamBoolValue>X_RDK_WebConfig_GetParamBoolValue</func_GetParamBoolValue>
+				<func_SetParamBoolValue>X_RDK_WebConfig_SetParamBoolValue</func_SetParamBoolValue>
+		        </functions>
+		        <parameters>
+			        <parameter>
+			        <name>RfcEnable</name>
+			        <type>boolean</type>
+			        <syntax>bool</syntax>
+			        <writable>true</writable>
+			        </parameter>
+		        </parameters>
+		 </object>
         </objects>
 </dataModelInfo>
