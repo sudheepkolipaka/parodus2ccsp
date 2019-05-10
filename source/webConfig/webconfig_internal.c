@@ -133,127 +133,91 @@ static void *WebConfigTask()
 
 int processJsonDocument(char *webConfigData)
 {
-	cJSON *json = NULL;
 	cJSON *paramArray = NULL;
-	int itemSize =0, i=0; 
-	jsonparam_t *req_obj;
-	const char *getParamList[MAX_PARAMETERNAME_LEN];
-	int paramCount=0;
-	WDMP_STATUS ret = WDMP_FAILURE;
-	WDMP_STATUS setRet = WDMP_FAILURE;
-	int count=0, status = -1;
-	char *str=NULL;
 
-	if((webConfigData !=NULL) && (strlen(webConfigData)>0))
+	char *jsonData = NULL;
+	int status = -1, parseStatus = -1;
+	int i=0, item_size=0, getStatus =-1;
+
+	jsonparam_t *reqObj;
+	const char *getParamList[MAX_PARAMETERNAME_LEN];
+	int paramCount =0;
+	param_t *getparametervalArr;
+	param_t *storeGetvalArr;
+	
+	WDMP_STATUS setRet = WDMP_FAILURE;
+	int count=0;
+
+	parseStatus = parseJsonData(jsonData, &reqObj, &item_size);
+
+	//add valid parameters into list
+	if(parseStatus)
 	{
-		json = cJSON_Parse( webConfigData );
-		if(webConfigData !=NULL)
+		for( i = 0; i < item_size; i++ )
 		{
-			free( webConfigData );
-			webConfigData = NULL;
+			if ((reqObj[i].name !=NULL) && (reqObj[i].value !=NULL))
+			{
+				getParamList[paramCount] = reqObj[i].name;
+			
+				WalInfo("getParamList[%d] is %s\n",paramCount,  getParamList[paramCount]);
+				paramCount++;
+			}
 		}
 
-		if( json == NULL )
+		//GET call to get TR181 datatype of json parameters
+		getStatus = getCcspParamDetails(getParamList, paramCount, &getparametervalArr);
+		WalInfo("getStatus is %s\n", getStatus);
+
+		if(getStatus)
 		{
-			WalError("webConfigData parse error\n");
-			return status;
+			WalInfo("paramCount is %d\n", paramCount);
+
+			param_t *storeGetvalArr = (param_t *) malloc(sizeof(param_t ) * paramCount);
+			memset(storeGetvalArr, 0, sizeof(param_t ) * paramCount);
+
+			for( i = 0; i < paramCount; i++ )
+			{
+				WalInfo("getparametervalArr[%d].name:%s getparametervalArr[%d].value:%s getparametervalArr[%d].type:%d\n", i, getparametervalArr[i].name, i, getparametervalArr[i].value, i, getparametervalArr[i].type);
+
+				WalInfo("proceed to storeGetvalArr for rollback\n");
+				if ((getparametervalArr[i].name !=NULL) && (getparametervalArr[i].name !=NULL))
+				{
+					storeGetvalArr[i].name = strdup(getparametervalArr[i].name);
+					storeGetvalArr[i].value= strdup(getparametervalArr[i].value);
+					storeGetvalArr[i].type = getparametervalArr[i].type;
+
+					WalInfo("storeGetvalArr[%d].name:%s storeGetvalArr[%d].value:%s storeGetvalArr[%d].type:%d\n", i, storeGetvalArr[i].name, i, storeGetvalArr[i].value, i, storeGetvalArr[i].type);
+				}
+			}
+			WalInfo("status set to 1\n");
+			status = 1;
 		}
 		else
 		{
-			WalInfo("B4 JSON processing\n");
-			paramArray = cJSON_GetObjectItem( json, "parameters" );
-			if( paramArray != NULL )
-			{
-				itemSize = cJSON_GetArraySize( paramArray );
-				WalInfo("itemSize is %d\n", itemSize);
-
-				req_obj = (jsonparam_t *) malloc(sizeof(jsonparam_t) * itemSize);
-				memset(req_obj,0,(sizeof(jsonparam_t) * itemSize));
-
-				for( i = 0; i < itemSize; i++ )
-				{
-					cJSON* subitem = cJSON_GetArrayItem( paramArray, i );
-
-					if(subitem ->type == cJSON_String)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup(subitem->valuestring);
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else if(subitem ->type == cJSON_Number)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						str = (char*) malloc(64);
-						if(str !=NULL)
-						{
-							snprintf(str, 64, "%1.17g", subitem->valuedouble);
-							req_obj[i].value = strdup(str);
-							free(str);
-							WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-						}
-					}
-					else if(subitem ->type == cJSON_True)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup("true");
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else if(subitem ->type == cJSON_False)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup("false");
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else /* cJSON_NULL, cJSON_Array, cJSON_Object */
-					{
-						WalError("Invalid type\n");
-						return status;
-					}
-				}
-				
-				for( i = 0; i < itemSize; i++ )
-				{
-					if ((req_obj[i].name !=NULL) && (req_obj[i].value !=NULL))
-					{
-						getParamList[paramCount] = req_obj[i].name;
-						WalInfo("getParamList[%d] is %s\n",paramCount,  getParamList[paramCount]);
-						paramCount++;
-					}
-				}
-				//paramCount = sizeof(getParamList)/sizeof(getParamList[0]);
-				WalInfo("paramCount is %d\n", paramCount);
-
-				param_t **parametervalArr = (param_t **) malloc(sizeof(param_t *) * paramCount);
-				memset(parametervalArr, 0, sizeof(param_t *) * paramCount);
-
-				WalInfo("calling getValues..\n");
-
-				getValues(getParamList, paramCount, 0, NULL,&parametervalArr, &count, &ret);
-				if (ret == WDMP_SUCCESS )
-				{
-					WalInfo("GET success\n");
-					for( i = 0; i < paramCount; i++ )
-					{
-						WalInfo("parametervalArr[%d]->name:%s parametervalArr[%d]->value:%s parametervalArr[%d]->type:%d\n", i, parametervalArr[i]->name, i, parametervalArr[i]->value, i, parametervalArr[i]->type);
-					}
-				}
-				else
-				{
-					WalError("Failed to GetValue. ret is %d\n", ret);
-					WAL_FREE(parametervalArr);//free here
-				}
-
-				//:TODO
+			WalError("GET failed . getStatus: %d\n", getStatus);
+		}
+	}
+	else
+	{
+		WalError("Json parse failed . parseStatus: %d\n", parseStatus);
+	}
+/*
 				//store this array for rollback purpose.
 				WalInfo("proceeding to SET \n");
+
+				//rollback - from backup config file . 
+				//if set success , then encode and copy new jsondata to back up file. 
+				//if set fails , decyrpt backup data and again json parse and then get call
+
+				//SET call to apply the config settings
 				param_t *setparametervalArr = (param_t *) malloc(sizeof(param_t) * paramCount);
 				memset(setparametervalArr, 0, sizeof(param_t) * paramCount);
 
 				for( i = 0; i < paramCount; i++ )
 				{
-					walStrncpy(setparametervalArr[i].name, (*parametervalArr)[i].name,64);
-					walStrncpy(setparametervalArr[i].value, (*parametervalArr)[i].value,64);
-					setparametervalArr[i].type = (*parametervalArr)[i].type;		
+					walStrncpy(setparametervalArr[i]->name, (*parametervalArr)[i]->name,64);
+					walStrncpy(setparametervalArr[i]->value, (*parametervalArr)[i]->value,64);
+					setparametervalArr[i]->type = (*parametervalArr)[i]->type;		
 				}
 
 				setValues(setparametervalArr, paramCount, WEBPA_SET, NULL, NULL, &setRet);
@@ -273,16 +237,132 @@ int processJsonDocument(char *webConfigData)
 					}
 				}
 				WalInfo("set done\n");
-				WAL_FREE(setparametervalArr);
-				status = 1;
-			}
-		}
-	}
+				WAL_FREE(setparametervalArr);*/
+		
 	return status;
 
 }
 
+//GET call to get Ccsp datatype of TR181 parameters
+int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getparametervalArr)
+{
+	int i =0, count=0, rv =-1;
+	WDMP_STATUS ret = WDMP_FAILURE;
 
+	param_t **parametervalArr = (param_t **) malloc(sizeof(param_t *) * paramCount);
+	memset(parametervalArr, 0, sizeof(param_t *) * paramCount);
+
+	WalInfo("calling getValues..\n");
+
+	getValues(getParamList, paramCount, 0, NULL,&parametervalArr, &count, &ret);
+	if (ret == WDMP_SUCCESS )
+	{
+		WalInfo("GET success\n");
+		for( i = 0; i < paramCount; i++ )
+		{
+			WalInfo("parametervalArr[%d]->name:%s parametervalArr[%d]->value:%s parametervalArr[%d]->type:%d\n", i, parametervalArr[i]->name, i, parametervalArr[i]->value, i, parametervalArr[i]->type);
+
+			if((parametervalArr[i]->name !=NULL) && (parametervalArr[i]->value !=NULL))
+			{
+				getparametervalArr[i]->name = parametervalArr[i]->name;
+				getparametervalArr[i]->value= parametervalArr[i]->value;
+				getparametervalArr[i]->type = parametervalArr[i]->type;
+				//check parametervalArr free here.
+			}
+		}
+		rv = 1;
+	}
+	else
+	{
+		WalError("Failed to GetValue. ret is %d\n", ret);
+		WAL_FREE(parametervalArr);//free here
+	}
+
+	return rv;
+}
+
+int parseJsonData(char* jsonData, param_t **reqObj, int *item_size)
+{
+	cJSON *json = NULL;
+	cJSON *paramArray = NULL;
+	int i=0, itemSize=0; 
+	char *str = NULL;
+	param_t *req_obj;
+	int rv =-1;
+
+	if((jsonData !=NULL) && (strlen(jsonData)>0))
+	{
+		json = cJSON_Parse( jsonData );
+		if(jsonData !=NULL)
+		{
+			free( jsonData );
+			jsonData = NULL;
+		}
+
+		if( json == NULL )
+		{
+			WalInfo("WebConfig Parse error\n");
+			return rv;
+		}
+		else
+		{
+			paramArray = cJSON_GetObjectItem( json, "parameters" );
+			if( paramArray != NULL )
+			{
+				itemSize = cJSON_GetArraySize( paramArray );
+				WalInfo("itemSize is %d\n", itemSize);
+
+				req_obj = (param_t *) malloc(sizeof(param_t) * itemSize);
+				memset(req_obj,0,(sizeof(param_t) * itemSize));
+				for( i = 0; i < itemSize; i++ )
+				{
+					cJSON* subitem = cJSON_GetArrayItem( paramArray, i );
+					//mapCJsonType(subitem, &req_obj);
+				
+					if(subitem ->type == cJSON_String)
+					{
+						req_obj[i].name = strdup(subitem->string);
+						req_obj[i].value = strdup(subitem->valuestring);
+						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
+					}
+					else if(subitem ->type == cJSON_Number)
+					{
+						req_obj[i].name = strdup(subitem->string);
+						str = (char*) malloc(32);
+						snprintf(str, 32, "%1.17g", subitem->valuedouble);
+						req_obj[i].value = strdup(str);
+						free(str);
+						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
+					}
+					else if(subitem ->type == cJSON_True)
+					{
+						req_obj[i].name = strdup(subitem->string);
+						req_obj[i].value = strdup("true");
+						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
+					}
+					else if(subitem ->type == cJSON_False)
+					{
+						req_obj[i].name = strdup(subitem->string);
+						req_obj[i].value = strdup("false");
+						printf("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
+					}
+					else //cJSON_NULL, cJSON_Array, cJSON_Object etc.
+					{
+						WalInfo("Invalid type\n");
+						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
+					}
+					
+		
+				}
+				
+				*item_size = itemSize;
+				*reqObj = req_obj;
+				rv = 1;
+			}
+		}
+	}
+	return rv;
+}
 /*
 * @brief Initialize curl object with required options. create configData using libcurl.
 * @param[out] configData 
