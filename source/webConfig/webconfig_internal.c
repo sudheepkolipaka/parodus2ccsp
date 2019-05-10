@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include "webpa_adapter.h"
+#include "webconfig_internal.h"
 #include "cJSON.h"
 /*----------------------------------------------------------------------------*/
 /*                                   Macros                                   */
@@ -21,6 +22,10 @@
 #define MAX_BUF_SIZE	           128
 #define WEB_CFG_FILE		      "/nvram/webConfig.json"
 #define MAX_PARAMETERNAME_LEN			4096
+#define WEBPA_READ_HEADER             "/etc/parodus/parodus_read_file.sh"
+#define WEBPA_CREATE_HEADER           "/etc/parodus/parodus_create_file.sh"
+
+
 /*----------------------------------------------------------------------------*/
 /*                               Data Structures                              */
 /*----------------------------------------------------------------------------*/
@@ -38,7 +43,7 @@ typedef struct
 /*----------------------------------------------------------------------------*/
 static void *WebConfigTask();
 int readFromJSON(char **data);
-int processJsonDocument(char *webConfigData);
+int processJsonDocument(char *jsonData);
 //int requestWebConfigData(char *configData, size_t len, int r_count, int index);
 //static void get_webCfg_interface(char **interface);
 //void createCurlheader(char *doc_header, struct curl_slist *list, struct curl_slist **header_list);
@@ -93,6 +98,12 @@ static void *WebConfigTask()
 	int r_count;
 	//int index;
 	int json_status=-1;
+	char *auth_token = NULL;
+
+	//Fetch auth JWT token from cloud.
+	WalInfo("Fetch auth JWT token from cloud\n");
+	getAuthToken(&auth_token);
+	WalInfo("auth_token is %s\n", auth_token);
 
 	while(1)
 	{
@@ -131,11 +142,10 @@ static void *WebConfigTask()
 }
 
 
-int processJsonDocument(char *webConfigData)
+int processJsonDocument(char *jsonData)
 {
 	cJSON *paramArray = NULL;
 
-	char *jsonData = NULL;
 	int status = -1, parseStatus = -1;
 	int i=0, item_size=0, getStatus =-1;
 
@@ -148,8 +158,10 @@ int processJsonDocument(char *webConfigData)
 	WDMP_STATUS setRet = WDMP_FAILURE;
 	int count=0;
 
+	WalInfo("calling parseJsonData\n");
 	parseStatus = parseJsonData(jsonData, &reqObj, &item_size);
 
+	WalInfo("parseStatus is %d\n", parseStatus);
 	//add valid parameters into list
 	if(parseStatus)
 	{
@@ -275,7 +287,7 @@ int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getp
 	else
 	{
 		WalError("Failed to GetValue. ret is %d\n", ret);
-		WAL_FREE(parametervalArr);//free here
+		//WAL_FREE(parametervalArr);//free here
 	}
 
 	return rv;
@@ -541,7 +553,7 @@ int parseJsonData(char* jsonData, param_t **reqObj, int *item_size)
         if(data->data) {
             free(data->data);
         }
-        ParodusError("Failed to allocate memory for data\n");
+        WalError("Failed to allocate memory for data\n");
         return 0;
     }
 
@@ -617,3 +629,118 @@ static void get_webCfg_interface(char **interface)
 	*header_list = list;
 }*/
 
+
+void execute_token_script(char *token, char *name, size_t len, char *mac, char *serNum)
+{
+    FILE* out = NULL, *file = NULL;
+    char command[MAX_BUF_SIZE] = {'\0'};
+    if(strlen(name)>0)
+    {
+        file = fopen(name, "r");
+        if(file)
+        {
+            snprintf(command,sizeof(command),"%s %s %s",name,serNum,mac);
+            out = popen(command, "r");
+            if(out)
+            {
+                fgets(token, len, out);
+                pclose(out);
+            }
+            fclose(file);
+        }
+        else
+        {
+            WalError ("File %s open error\n", name);
+        }
+    }
+}
+
+/*
+* call parodus create/acquisition script to create new auth token, if success then calls
+* execute_token_script func with args as parodus read script.
+*/
+
+void createNewAuthToken(char *newToken, size_t len, char *hw_mac, char* hw_serial_number)
+{
+	//Call create script
+	char output[12] = {'\0'};
+	execute_token_script(output,WEBPA_CREATE_HEADER,sizeof(output),hw_mac,hw_serial_number);
+	if (strlen(output)>0  && strcmp(output,"SUCCESS")==0)
+	{
+		//Call read script
+		execute_token_script(newToken,WEBPA_READ_HEADER,len,hw_mac,hw_serial_number);
+	}
+	else
+	{
+		WalError("Failed to create new token\n");
+	}
+}
+
+/*
+* Fetches authorization token from the output of read script. If read script returns "ERROR"
+* it will call createNewAuthToken to create and read new token
+*/
+
+void getAuthToken(char **token)
+{
+	//local var to update webpa_auth_token only in success case
+	char output[4069] = {'\0'} ;
+	char *macID = NULL;
+	char deviceMACValue[32] = { '\0' };
+	char *hw_serial_number=NULL;
+	char hw_mac[32]={'\0'};
+	char webpa_auth_token[4096];
+
+	if( strlen(WEBPA_READ_HEADER) !=0 && strlen(WEBPA_CREATE_HEADER) !=0)
+	{
+		macID = getParameterValue(DEVICE_MAC);
+		if (macID != NULL)
+		{
+		    strncpy(deviceMACValue, macID, strlen(macID)+1);
+		    macToLower(deviceMACValue, hw_mac);
+		    WalInfo("hw_mac: %s\n", hw_mac);
+		    WAL_FREE(macID);
+		}
+		if( hw_mac != NULL && strlen(hw_mac) !=0 )
+		{
+			hw_serial_number = getParameterValue(SERIAL_NUMBER);
+			WalInfo("hw_serial_number: %s\n", hw_serial_number);
+
+			if( hw_serial_number != NULL && strlen(hw_serial_number) !=0 )
+			{
+				execute_token_script(output, WEBPA_READ_HEADER, sizeof(output), hw_mac, hw_serial_number);
+				if ((strlen(output) == 0))
+				{
+					WalError("Unable to get auth token\n");
+				}
+				else if(strcmp(output,"ERROR")==0)
+				{
+					WalInfo("Failed to read token from %s. Proceeding to create new token.\n",WEBPA_READ_HEADER);
+					//Call create/acquisition script
+					createNewAuthToken(webpa_auth_token, sizeof(webpa_auth_token), hw_mac, hw_serial_number );
+					*token = (char*)webpa_auth_token;
+				}
+				else
+				{
+					WalInfo("update webpa_auth_token in success case\n");
+					walStrncpy(webpa_auth_token, output, sizeof(webpa_auth_token));
+					WalInfo("webpa_auth_token is %s\n", webpa_auth_token );
+					*token = (char*)webpa_auth_token;
+					WalInfo("*token is %s\n", *token );
+				}
+			}
+			else
+			{
+				WalError("hw_serial_number is NULL, failed to fetch auth token\n");
+			}
+		}
+		else
+		{
+			WalError("hw_mac is NULL, failed to fetch auth token\n");
+		}
+	}
+	else
+	{
+		WalInfo("Both read and write file are NULL \n");
+	}
+}
