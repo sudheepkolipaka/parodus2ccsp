@@ -102,7 +102,7 @@ static void *WebConfigTask()
 
 	//Fetch auth JWT token from cloud.
 	WalInfo("Fetch auth JWT token from cloud\n");
-	getAuthToken(&auth_token);
+	getAuthToken(&auth_token); //check curl retry for 5min backoff
 	WalInfo("auth_token is %s\n", auth_token);
 
 	while(1)
@@ -149,7 +149,7 @@ int processJsonDocument(char *jsonData)
 	int status = -1, parseStatus = -1;
 	int i=0, item_size=0, getStatus =-1;
 
-	jsonparam_t *reqObj;
+	req_struct *reqObj;
 	const char *getParamList[MAX_PARAMETERNAME_LEN];
 	int paramCount =0;
 	param_t *getparametervalArr;
@@ -157,15 +157,55 @@ int processJsonDocument(char *jsonData)
 	
 	WDMP_STATUS setRet = WDMP_FAILURE;
 	int count=0;
+	WDMP_STATUS valid_ret = WDMP_FAILURE;
+	WDMP_STATUS ret = WDMP_FAILURE;
 
 	WalInfo("calling parseJsonData\n");
-	parseStatus = parseJsonData(jsonData, &reqObj, &item_size);
+	parseStatus = parseJsonData(jsonData, &reqObj);
 
 	WalInfo("parseStatus is %d\n", parseStatus);
 	//add valid parameters into list
 	if(parseStatus)
 	{
-		for( i = 0; i < item_size; i++ )
+
+		WalInfo("Request:> Type : %d\n",reqObj->reqType);
+		WalInfo("Request:> ParamCount = %zu\n",reqObj->u.setReq->paramCnt);
+		paramCount = (int)reqObj->u.setReq->paramCnt;
+		
+		for (i = 0; i < paramCount; i++) 
+                {
+                        WalInfo("Request:> param[%d].name = %s\n",i,reqObj->u.setReq->param[i].name);
+                        WalInfo("Request:> param[%d].value = %s\n",i,reqObj->u.setReq->param[i].value);
+                        WalInfo("Request:> param[%d].type = %d\n",i,reqObj->u.setReq->param[i].type);
+
+                }
+
+		valid_ret = validate_parameter(reqObj->u.setReq->param, paramCount, reqObj->reqType);
+                WalInfo("valid_ret : %d\n",valid_ret);
+                if(valid_ret == WDMP_SUCCESS)
+                {
+                        setValues(reqObj->u.setReq->param, paramCount, WEBPA_SET, NULL, NULL, &ret);
+			WalPrint("SPV ret : %d\n",ret);
+                        if(ret == WDMP_SUCCESS)
+                        {
+                             WalInfo("Atomic set is success\n");
+
+			     //store reqObj->u.setReq->param into storeVal struct also in backup json
+
+			     status = 1;
+                        }
+			else
+			{
+				WalError("Atomic set failed\n");
+				//rollback. fetch value storeVal struct and do set.
+			}
+		}
+		else
+		{
+			WalError("validate_parameter failed\n");
+		}
+	}
+/*		for( i = 0; i < item_size; i++ )
 		{
 			if ((reqObj[i].name !=NULL) && (reqObj[i].value !=NULL))
 			{
@@ -212,14 +252,14 @@ int processJsonDocument(char *jsonData)
 	else
 	{
 		WalError("Json parse failed . parseStatus: %d\n", parseStatus);
-	}
+	}*/
 /*
-				//store this array for rollback purpose.
+				//store this array for rollback purpose. i.e. storeGetvalArr
 				WalInfo("proceeding to SET \n");
 
 				//rollback - from backup config file . 
-				//if set success , then encode and copy new jsondata to back up file. 
-				//if set fails , decyrpt backup data and again json parse and then get call
+				//if set success , then copy new jsondata to back up file. 
+				//if set fails , fetch backup data and again json parse and then get call
 
 				//SET call to apply the config settings
 				param_t *setparametervalArr = (param_t *) malloc(sizeof(param_t) * paramCount);
@@ -293,14 +333,14 @@ int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getp
 	return rv;
 }
 
-int parseJsonData(char* jsonData, param_t **reqObj, int *item_size)
+int parseJsonData(char* jsonData, req_struct **req_obj)
 {
 	cJSON *json = NULL;
-	cJSON *paramArray = NULL;
-	int i=0, itemSize=0; 
-	char *str = NULL;
-	param_t *req_obj;
+	int i=0; 
 	int rv =-1;
+	req_struct *reqObj = NULL;
+	int paramCount=0;
+	WDMP_STATUS ret = WDMP_FAILURE, valid_ret = WDMP_FAILURE;
 
 	if((jsonData !=NULL) && (strlen(jsonData)>0))
 	{
@@ -318,60 +358,28 @@ int parseJsonData(char* jsonData, param_t **reqObj, int *item_size)
 		}
 		else
 		{
-			paramArray = cJSON_GetObjectItem( json, "parameters" );
-			if( paramArray != NULL )
-			{
-				itemSize = cJSON_GetArraySize( paramArray );
-				WalInfo("itemSize is %d\n", itemSize);
+			(reqObj) = (req_struct *) malloc(sizeof(req_struct));
+                	memset((reqObj), 0, sizeof(req_struct));
 
-				req_obj = (param_t *) malloc(sizeof(param_t) * itemSize);
-				memset(req_obj,0,(sizeof(param_t) * itemSize));
-				for( i = 0; i < itemSize; i++ )
-				{
-					cJSON* subitem = cJSON_GetArrayItem( paramArray, i );
-					//mapCJsonType(subitem, &req_obj);
-				
-					if(subitem ->type == cJSON_String)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup(subitem->valuestring);
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else if(subitem ->type == cJSON_Number)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						str = (char*) malloc(32);
-						snprintf(str, 32, "%1.17g", subitem->valuedouble);
-						req_obj[i].value = strdup(str);
-						free(str);
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else if(subitem ->type == cJSON_True)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup("true");
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else if(subitem ->type == cJSON_False)
-					{
-						req_obj[i].name = strdup(subitem->string);
-						req_obj[i].value = strdup("false");
-						printf("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					else //cJSON_NULL, cJSON_Array, cJSON_Object etc.
-					{
-						WalInfo("Invalid type\n");
-						WalInfo("req_obj[%d]->name:%s req_obj[%d]->value:%s\n", i, req_obj[i].name, i, req_obj[i].value);
-					}
-					
-		
-				}
-				
-				*item_size = itemSize;
-				*reqObj = req_obj;
-				rv = 1;
+			WalInfo("B4 parse_set_request\n");
+			parse_set_request(json, &reqObj, "WDMP_TR181");
+
+			if(reqObj != NULL)
+        		{
+				WalInfo("parse_set_request done\n");
+				*req_obj = reqObj;	
+				rv = 1;		
+				//free wrp reqObj
+			}
+			else
+			{
+				WalError("Failed to parse set request\n");
 			}
 		}
+	}
+	else
+	{
+		WalError("jsonData is empty\n");
 	}
 	return rv;
 }

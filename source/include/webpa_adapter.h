@@ -90,7 +90,7 @@ uint64_t getCurrentTimeInMicroSeconds(struct timespec *timer);
  * @return msec.
  */
 long timeValDiff(struct timespec *starttime, struct timespec *finishtime);
-
+WDMP_STATUS validate_parameter(param_t *param, int paramCount, REQ_TYPE type);
 /**
  * @brief processRequest processes the request and returns response payload
  *
