@@ -37,7 +37,7 @@ static int getParamValues(char *parameterNames[], int paramCount, char *CompName
 static void free_set_param_values_memory(parameterValStruct_t* val, int paramCount, char * faultParam);
 static void free_paramVal_memory(param_t ** val, int paramCount);
 static int prepare_parameterValueStruct(parameterValStruct_t* val, param_t *paramVal, char *paramName);
-static int setParamValues(param_t *paramVal, char *CompName, char *dbusPath, int paramCount,const WEBPA_SET_TYPE setType, char *transactionId);
+int setParamValues(param_t *paramVal, char *CompName, char *dbusPath, int paramCount,const WEBPA_SET_TYPE setType, char *transactionId);
 static void *applyWiFiSettingsTask();
 static void identifyRadioIndexToReset(int paramCount, parameterValStruct_t* val,BOOL *bRestartRadio1,BOOL *bRestartRadio2); 
 BOOL applySettingsFlag;
@@ -625,7 +625,7 @@ static int prepare_parameterValueStruct(parameterValStruct_t* val, param_t *para
  * @param[in] paramCount count of paramter nanmes
  * @param[in] setType Flag to specify the type of set operation.
  */
-static int setParamValues(param_t *paramVal, char *CompName, char *dbusPath, int paramCount,const WEBPA_SET_TYPE setType, char *transactionId)
+int setParamValues(param_t *paramVal, char *CompName, char *dbusPath, int paramCount,const WEBPA_SET_TYPE setType, char *transactionId)
 {
         char* faultParam = NULL;
         int ret=0, cnt = 0, retIndex=0;

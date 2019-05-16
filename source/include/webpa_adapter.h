@@ -135,6 +135,7 @@ void getAttributes(const char *paramName[], const unsigned int paramCount, money
  */
 void setValues(const param_t paramVal[], const unsigned int paramCount, const WEBPA_SET_TYPE setType, char *transactionId, money_trace_spans *timeSpan, WDMP_STATUS *retStatus);
 
+int setParamValues(param_t *paramVal, char *CompName, char *dbusPath, int paramCount,const WEBPA_SET_TYPE setType, char *transactionId);
 /**
  * @brief setAttributes Returns the status of parameter from stack for SET-ATTRIBUTES request
  *

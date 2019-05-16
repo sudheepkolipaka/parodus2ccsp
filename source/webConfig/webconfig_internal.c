@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include "webpa_adapter.h"
+#include "webpa_internal.h"
 #include "webconfig_internal.h"
 #include "cJSON.h"
 /*----------------------------------------------------------------------------*/
@@ -18,6 +19,7 @@
 #define CLIENT_CERT_PATH  	   "/etc/clientcert.crt"
 #define CA_CERT_PATH 		   "/etc/ssl/certs/ca-certificates.crt"
 #define DEVICE_PROPS_FILE          "/etc/device.properties"
+#define WEBCONFIG_BACKUP_FILE	   "/nvram/webconfigBackup.json"
 #define WEBCFG_INTERFACE_DEFAULT   "erouter0"
 #define MAX_BUF_SIZE	           128
 #define WEB_CFG_FILE		      "/nvram/webConfig.json"
@@ -44,10 +46,13 @@ typedef struct
 static void *WebConfigTask();
 int readFromJSON(char **data);
 int processJsonDocument(char *jsonData);
+int validateConfigFormat(cJSON *json, char *ETAG);
 //int requestWebConfigData(char *configData, size_t len, int r_count, int index);
 //static void get_webCfg_interface(char **interface);
 //void createCurlheader(char *doc_header, struct curl_slist *list, struct curl_slist **header_list);
 //size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
+WDMP_STATUS setConfigParamValues( param_t paramVal[], int paramCount );
+int storeGetValues(param_t *reqObj, int paramCount, param_t **storeGetValue);
 /*----------------------------------------------------------------------------*/
 /*                             External Functions                             */
 /*----------------------------------------------------------------------------*/
@@ -146,183 +151,200 @@ int processJsonDocument(char *jsonData)
 {
 	cJSON *paramArray = NULL;
 
-	int status = -1, parseStatus = -1;
+	int parseStatus = 0;
+	int rollbackRet=0;
 	int i=0, item_size=0, getStatus =-1;
-
+	int getRet=0, count =0, setRet2=0, rollbackRet2=0;
 	req_struct *reqObj;
 	const char *getParamList[MAX_PARAMETERNAME_LEN];
 	int paramCount =0;
-	param_t *getparametervalArr;
-	param_t *storeGetvalArr;
-	
-	WDMP_STATUS setRet = WDMP_FAILURE;
-	int count=0;
-	WDMP_STATUS valid_ret = WDMP_FAILURE;
+	param_t *getVal = NULL;
+	param_t *storeGetvalArr = NULL;
+	param_t *globalRollbackVal=NULL;
+	WDMP_STATUS setRet = WDMP_FAILURE, valid_ret = WDMP_FAILURE;
 	WDMP_STATUS ret = WDMP_FAILURE;
 
 	WalInfo("calling parseJsonData\n");
 	parseStatus = parseJsonData(jsonData, &reqObj);
 
 	WalInfo("parseStatus is %d\n", parseStatus);
-	//add valid parameters into list
+
 	if(parseStatus)
 	{
 
 		WalInfo("Request:> Type : %d\n",reqObj->reqType);
 		WalInfo("Request:> ParamCount = %zu\n",reqObj->u.setReq->paramCnt);
 		paramCount = (int)reqObj->u.setReq->paramCnt;
-		
 		for (i = 0; i < paramCount; i++) 
-                {
-                        WalInfo("Request:> param[%d].name = %s\n",i,reqObj->u.setReq->param[i].name);
-                        WalInfo("Request:> param[%d].value = %s\n",i,reqObj->u.setReq->param[i].value);
-                        WalInfo("Request:> param[%d].type = %d\n",i,reqObj->u.setReq->param[i].type);
+		{
+		        WalInfo("Request:> param[%d].name = %s\n",i,reqObj->u.setReq->param[i].name);
+		        WalInfo("Request:> param[%d].value = %s\n",i,reqObj->u.setReq->param[i].value);
+		        WalInfo("Request:> param[%d].type = %d\n",i,reqObj->u.setReq->param[i].type);
 
-                }
+		}
 
 		valid_ret = validate_parameter(reqObj->u.setReq->param, paramCount, reqObj->reqType);
-                WalInfo("valid_ret : %d\n",valid_ret);
-                if(valid_ret == WDMP_SUCCESS)
-                {
-                        setValues(reqObj->u.setReq->param, paramCount, WEBPA_SET, NULL, NULL, &ret);
-			WalPrint("SPV ret : %d\n",ret);
-                        if(ret == WDMP_SUCCESS)
-                        {
-                             WalInfo("Atomic set is success\n");
+		WalInfo("valid_ret : %d\n",valid_ret);
 
-			     //store reqObj->u.setReq->param into storeVal struct also in backup json
+		if(valid_ret == WDMP_SUCCESS)
+		{
+			FILE *fp = fopen(WEBCONFIG_BACKUP_FILE, "r");
 
-			     status = 1;
-                        }
-			else
+			if (NULL == fp) //initial case where backup file is not present
 			{
-				WalError("Atomic set failed\n");
-				//rollback. fetch value storeVal struct and do set.
-			}
-		}
-		else
-		{
-			WalError("validate_parameter failed\n");
-		}
-	}
-/*		for( i = 0; i < item_size; i++ )
-		{
-			if ((reqObj[i].name !=NULL) && (reqObj[i].value !=NULL))
-			{
-				getParamList[paramCount] = reqObj[i].name;
-			
-				WalInfo("getParamList[%d] is %s\n",paramCount,  getParamList[paramCount]);
-				paramCount++;
-			}
-		}
-
-		//GET call to get TR181 datatype of json parameters
-		getStatus = getCcspParamDetails(getParamList, paramCount, &getparametervalArr);
-		WalInfo("getStatus is %s\n", getStatus);
-
-		if(getStatus)
-		{
-			WalInfo("paramCount is %d\n", paramCount);
-
-			param_t *storeGetvalArr = (param_t *) malloc(sizeof(param_t ) * paramCount);
-			memset(storeGetvalArr, 0, sizeof(param_t ) * paramCount);
-
-			for( i = 0; i < paramCount; i++ )
-			{
-				WalInfo("getparametervalArr[%d].name:%s getparametervalArr[%d].value:%s getparametervalArr[%d].type:%d\n", i, getparametervalArr[i].name, i, getparametervalArr[i].value, i, getparametervalArr[i].type);
-
-				WalInfo("proceed to storeGetvalArr for rollback\n");
-				if ((getparametervalArr[i].name !=NULL) && (getparametervalArr[i].name !=NULL))
+				//get calls for caching for rollback purpose.
+				getRet = storeGetValues(reqObj->u.setReq->param, paramCount, &getVal);
+				WalInfo("storeGetValues done\n");
+				if (getRet == WDMP_SUCCESS)
 				{
-					storeGetvalArr[i].name = strdup(getparametervalArr[i].name);
-					storeGetvalArr[i].value= strdup(getparametervalArr[i].value);
-					storeGetvalArr[i].type = getparametervalArr[i].type;
-
-					WalInfo("storeGetvalArr[%d].name:%s storeGetvalArr[%d].value:%s storeGetvalArr[%d].type:%d\n", i, storeGetvalArr[i].name, i, storeGetvalArr[i].value, i, storeGetvalArr[i].type);
-				}
-			}
-			WalInfo("status set to 1\n");
-			status = 1;
-		}
-		else
-		{
-			WalError("GET failed . getStatus: %d\n", getStatus);
-		}
-	}
-	else
-	{
-		WalError("Json parse failed . parseStatus: %d\n", parseStatus);
-	}*/
-/*
-				//store this array for rollback purpose. i.e. storeGetvalArr
-				WalInfo("proceeding to SET \n");
-
-				//rollback - from backup config file . 
-				//if set success , then copy new jsondata to back up file. 
-				//if set fails , fetch backup data and again json parse and then get call
-
-				//SET call to apply the config settings
-				param_t *setparametervalArr = (param_t *) malloc(sizeof(param_t) * paramCount);
-				memset(setparametervalArr, 0, sizeof(param_t) * paramCount);
-
-				for( i = 0; i < paramCount; i++ )
-				{
-					walStrncpy(setparametervalArr[i]->name, (*parametervalArr)[i]->name,64);
-					walStrncpy(setparametervalArr[i]->value, (*parametervalArr)[i]->value,64);
-					setparametervalArr[i]->type = (*parametervalArr)[i]->type;		
-				}
-
-				setValues(setparametervalArr, paramCount, WEBPA_SET, NULL, NULL, &setRet);
-
-				if (setRet == WDMP_SUCCESS)
-				{
-					for( i = 0; i < paramCount; i++ )
+					for (i = 0; i < paramCount; i++) //just for logging. check paramCount here.
 					{
-						WalInfo("Successfully SetValue for %s\n", setparametervalArr[i].name);
+						WalInfo("getVal[%d].name:%s getVal[%d].value:%s getVal[%d].type:%d\n", i, getVal[i].name, i, getVal[i].value, i, getVal[i].type);
+					}
+					setRet = setConfigParamValues(reqObj->u.setReq->param, paramCount);
+					WalInfo("setConfigParamValues done, setRet %d\n", setRet);
+					if(setRet != CCSP_SUCCESS)
+					{
+						WalError("Failed to do webconfig atomic set hence rollbacking the changes. setRet :%d\n",setRet);
+						rollbackRet=setConfigParamValues(getVal, paramCount);
+						if(rollbackRet != CCSP_SUCCESS)
+						{
+							WalError("While rollback, Failed to do atomic set. rollbackRet :%d\n",rollbackRet);//:TODO getVal should be updated to global.?
+							return 0;
+						}
+					}
+					else
+					{
+						WalInfo("SET is success\n");
+						//addValuesToBackupJSON(reqObj->u.setReq->param); //:TODO
+						//setGlobalRollbackStruct(reqObj->u.setReq->param); //:TODO
+						return 1;
 					}
 				}
 				else
 				{
-					for( i = 0; i < paramCount; i++ )
-					{
-						WalError("Failed to SetValue for %s\n", setparametervalArr[0].name);
-					}
+					WalError("storeGetValues caching failed, getRet: %d. Cannot apply the config\n", getRet);
+					return 0;
 				}
-				WalInfo("set done\n");
-				WAL_FREE(setparametervalArr);*/
-		
-	return status;
+			}
+			else  //second time
+			{
+				fclose(fp);
+				setRet2 = setConfigParamValues(reqObj->u.setReq->param, paramCount);
+				WalInfo("setConfigParamValues done. setRet2 is %d\n", setRet2);
+				if(setRet2 != CCSP_SUCCESS)
+				{
+					WalError("Failed to do webconfig atomic set hence rollbacking the changes. setRet2 :%d\n",setRet2);
+					//globalRollbackVal = getGlobalRollbackStruct();
+					//rollbackRet2 = setConfigParamValues(globalRollbackVal, paramCount);
+					/*if(rollbackRet2 != CCSP_SUCCESS)
+					{
+						WalError("While rollback, Failed to do atomic set. rollbackRet2 :%d\n",rollbackRet2);//check if we need to do anything here. :TODO (getVal should be updated to global?)
+						return 0;
+					}*/
+					//return 1;
+					return 0; //testing purpose . remove this.
+				}
+				else
+				{
+					WalInfo("SET is success\n");
+					//addValuesToBackupJSON(reqObj->u.setReq->param); //:TODO 
+					//setGlobalRollbackStruct(reqObj->u.setReq->param); //:TODO 
+					return 1;
+				}
+
+			}
+		}
+		else
+		{
+			WalError("validate_parameter failed. parseStatus is %d\n", valid_ret);
+			return 0;
+		}
+	}
+	else
+	{
+		WalError("parseJsonData failed. parseStatus is %d\n", parseStatus);
+		return 0;
+	}
+	return 0;
 
 }
 
-//GET call to get Ccsp datatype of TR181 parameters
-int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getparametervalArr)
+WDMP_STATUS setConfigParamValues( param_t paramVal[], int paramCount )
 {
-	int i =0, count=0, rv =-1;
 	WDMP_STATUS ret = WDMP_FAILURE;
+	int cnt1=0,error=0;
+	int *count=0;
+	int checkSetstatus=0, i =0;
+	char **compName = NULL;
+        char **dbusPath = NULL;
+	char *parameterName = NULL;
+	for(cnt1 = 0; cnt1 < paramCount; cnt1++)
+        {
+                walStrncpy(parameterName,paramVal[cnt1].name,sizeof(parameterName));
+                // To get list of component name and dbuspath
+                ret = getComponentDetails(parameterName,&compName,&dbusPath,&error,&count);
+                if(error == 1)
+                {
+                        break;
+                }
+                WalInfo("parameterName: %s count: %d\n",parameterName,count);
+                //free_componentDetails(compName,dbusPath,count);
+        }
 
-	param_t **parametervalArr = (param_t **) malloc(sizeof(param_t *) * paramCount);
-	memset(parametervalArr, 0, sizeof(param_t *) * paramCount);
+	for(i = 0; i < paramCount; i++) //just for logging
+	{
+                WalInfo("compName[%d] : %s, dbusPath[%d] : %s\n", i,compName[i],i, dbusPath[i]);
+        }
+
+	checkSetstatus = setParamValues(paramVal, compName[i], dbusPath[i], paramCount, WEBPA_SET, NULL);
+	return checkSetstatus;
+}
+
+//GET call to cache config param values for rollback
+int storeGetValues(param_t *getParamVal, int paramCount, param_t **storeGetValue)
+{
+	int i =0, count=0;
+	WDMP_STATUS ret = WDMP_FAILURE;
+	int getParamCount =0;
+	const char *getParamList[MAX_PARAMETERNAME_LEN];
+	WalInfo("------------------start of storeGetValues---------------\n");
+
+	for (i = 0; i < paramCount; i++)
+	{
+                WalInfo("Request:> param[%d].name = %s\n",i,getParamVal[i].name);
+		getParamList[getParamCount] = getParamVal[i].name;
+		getParamCount++;
+        }
+	WalInfo("getParamCount is %d\n", getParamCount);
+	param_t **parametervalArr = (param_t **) malloc(sizeof(param_t *) * getParamCount);
+	memset(parametervalArr, 0, sizeof(param_t *) * getParamCount);
+
+	storeGetValue = (param_t **) malloc(sizeof(param_t *) * getParamCount);
+	memset(storeGetValue, 0, sizeof(param_t *) * getParamCount);
 
 	WalInfo("calling getValues..\n");
+	
 
-	getValues(getParamList, paramCount, 0, NULL,&parametervalArr, &count, &ret);
+	getValues(getParamList, getParamCount, 0, NULL,&parametervalArr, &count, &ret);
 	if (ret == WDMP_SUCCESS )
 	{
 		WalInfo("GET success\n");
-		for( i = 0; i < paramCount; i++ )
+		for( i = 0; i < getParamCount; i++ )
 		{
 			WalInfo("parametervalArr[%d]->name:%s parametervalArr[%d]->value:%s parametervalArr[%d]->type:%d\n", i, parametervalArr[i]->name, i, parametervalArr[i]->value, i, parametervalArr[i]->type);
+			WalInfo("copying parametervalArr, allocating memory..\n");
 
-			if((parametervalArr[i]->name !=NULL) && (parametervalArr[i]->value !=NULL))
-			{
-				getparametervalArr[i]->name = parametervalArr[i]->name;
-				getparametervalArr[i]->value= parametervalArr[i]->value;
-				getparametervalArr[i]->type = parametervalArr[i]->type;
-				//check parametervalArr free here.
-			}
+			storeGetValue[i] = (param_t *) malloc(sizeof(param_t) * getParamCount);
+			WalInfo("malloc done...\n");
+			storeGetValue[i]->name = parametervalArr[i]->name;
+			storeGetValue[i]->value= parametervalArr[i]->value;
+			storeGetValue[i]->type = parametervalArr[i]->type;
+			//check parametervalArr free here.
+
+			WalInfo("storeGetValue copy done\n");
+			WalInfo("storeGetValue[%d]->name:%s storeGetValue[%d]->value:%s storeGetValue[%d]->type:%d\n", i, storeGetValue[i]->name, i, storeGetValue[i]->value, i, (storeGetValue)[i]->type);
 		}
-		rv = 1;
 	}
 	else
 	{
@@ -330,13 +352,14 @@ int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getp
 		//WAL_FREE(parametervalArr);//free here
 	}
 
-	return rv;
+	WalInfo("------------------End of storeGetValues---------------\n");
+	return ret;
 }
 
 int parseJsonData(char* jsonData, req_struct **req_obj)
 {
 	cJSON *json = NULL;
-	int i=0; 
+	int i=0, isValid =0;
 	int rv =-1;
 	req_struct *reqObj = NULL;
 	int paramCount=0;
@@ -353,11 +376,17 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 
 		if( json == NULL )
 		{
-			WalInfo("WebConfig Parse error\n");
+			WalError("WebConfig Parse error\n");
 			return rv;
 		}
 		else
 		{
+			isValid = validateConfigFormat(json, "1.0.0"); //check eTAG value here :TODO
+			if(!isValid)
+			{
+				WalError("validateConfigFormat failed\n");
+				return rv;
+			}
 			(reqObj) = (req_struct *) malloc(sizeof(req_struct));
                 	memset((reqObj), 0, sizeof(req_struct));
 
@@ -383,6 +412,67 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 	}
 	return rv;
 }
+
+int validateConfigFormat(cJSON *json, char *ETAG)
+{
+	cJSON *versionObj =NULL;
+	cJSON *paramArray = NULL;
+	int itemSize=0;
+	char *version=NULL;
+
+	versionObj = cJSON_GetObjectItem( json, "version" );
+	if(versionObj !=NULL)
+	{
+		if(cJSON_GetObjectItem( json, "version" )->type == cJSON_String)
+		{
+			version = cJSON_GetObjectItem( json, "version" )->valuestring;
+			if(version !=NULL)
+			{
+				if(strcmp(version, ETAG) == 0)
+				{
+					WalInfo("version are ETAG are same\n");
+					//check parameters
+					paramArray = cJSON_GetObjectItem( json, "parameters" );
+					if( paramArray != NULL )
+					{
+						WalInfo("contains parameters field\n");
+						itemSize = cJSON_GetArraySize( json );
+						WalInfo("itemSize is %d\n", itemSize);
+						if(itemSize ==2)
+						{
+							WalInfo("contains only 2 fields\n");
+							return 1;
+						}
+						else
+						{
+							WalError("contains fields other than version and parameters\n");
+							return 0;
+						}
+					}
+					else
+					{
+						WalError("Invalid config json, parameters field is not present\n");
+						return 0;
+					}
+				}
+				else
+				{
+					WalError("Invalid config json, version and ETAG are not same\n");
+					return 0;
+				}
+			}
+		}
+	}
+	else
+	{
+		WalError("Invalid config json, version field is not present\n");
+		return 0;
+	}
+
+	return 0;
+
+}
+
 /*
 * @brief Initialize curl object with required options. create configData using libcurl.
 * @param[out] configData 
@@ -510,6 +600,22 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 		}
 		else
 		{
+			// extract the content-type
+			char *ct = NULL;
+			content_res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
+			if(!content_res && ct)
+			{
+				WalInfo("Content-Type: %s\n", ct);
+				if(stcmp(ct, "application/json")!==0)
+				{
+					WalError("Invalid Content-Type\n");
+					return -1;
+				}
+				else
+				{
+					WalInfo("Content-Type is application/json\n");
+				}
+			}
 			if(response_code == 304)
 			{
 				WalInfo("webConfig document Sync success\n");
@@ -751,4 +857,42 @@ void getAuthToken(char **token)
 	{
 		WalInfo("Both read and write file are NULL \n");
 	}
+}
+
+//GET call to get Ccsp datatype of TR181 parameters
+int getCcspParamDetails(const char *getParamList, int paramCount, param_t **getparametervalArr)
+{
+	int i =0, count=0, rv =-1;
+	WDMP_STATUS ret = WDMP_FAILURE;
+
+	param_t **parametervalArr = (param_t **) malloc(sizeof(param_t *) * paramCount);
+	memset(parametervalArr, 0, sizeof(param_t *) * paramCount);
+
+	WalInfo("calling getValues..\n");
+
+	getValues(getParamList, paramCount, 0, NULL,&parametervalArr, &count, &ret);
+	if (ret == WDMP_SUCCESS )
+	{
+		WalInfo("GET success\n");
+		for( i = 0; i < paramCount; i++ )
+		{
+			WalInfo("parametervalArr[%d]->name:%s parametervalArr[%d]->value:%s parametervalArr[%d]->type:%d\n", i, parametervalArr[i]->name, i, parametervalArr[i]->value, i, parametervalArr[i]->type);
+
+			if((parametervalArr[i]->name !=NULL) && (parametervalArr[i]->value !=NULL))
+			{
+				getparametervalArr[i]->name = parametervalArr[i]->name;
+				getparametervalArr[i]->value= parametervalArr[i]->value;
+				getparametervalArr[i]->type = parametervalArr[i]->type;
+				//check parametervalArr free here.
+			}
+		}
+		rv = 1;
+	}
+	else
+	{
+		WalError("Failed to GetValue. ret is %d\n", ret);
+		//WAL_FREE(parametervalArr);//free here
+	}
+
+	return rv;
 }
