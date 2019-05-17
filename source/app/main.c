@@ -9,7 +9,7 @@
 #include "signal.h"
 #include "webpa_adapter.h"
 #include "libpd.h"
-//#include <curl/curl.h>
+#include <curl/curl.h>
 #ifdef INCLUDE_BREAKPAD
 #include "breakpad_wrapper.h"
 #endif
@@ -59,7 +59,7 @@ int main()
 	// Initialize Apply WiFi Settings handler
 	initApplyWiFiSettings();
 	initNotifyTask(ret);
-//	curl_global_init(CURL_GLOBAL_DEFAULT);
+	curl_global_init(CURL_GLOBAL_DEFAULT);
 	WalInfo("B4 initWebConfigTask\n");
 	initWebConfigTask();
 	parodus_receive_wait();

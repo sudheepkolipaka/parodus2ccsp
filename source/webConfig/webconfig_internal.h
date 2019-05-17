@@ -15,6 +15,11 @@
 #include <wdmp-c.h>
 #include <cimplog.h>
 
+struct token_data {
+    size_t size;
+    char* data;
+};
+
 #if defined(_COSA_BCM_MIPS_)
 #define DEVICE_MAC                   "Device.DPoE.Mac_address"
 #elif defined(PLATFORM_RASPBERRYPI)
@@ -26,5 +31,11 @@
 #endif
 
 #define SERIAL_NUMBER 		     "Device.DeviceInfo.SerialNumber"
+#define FIRMWARE_VERSION       	     "Device.DeviceInfo.X_CISCO_COM_FirmwareName"
 
-#endif /* _WEBPA_ADAPTER_H_ */
+
+size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
+void getAuthToken(char **token);
+
+
+#endif /* _WEBCONFIG_INTERNAL_H_ */
