@@ -22,7 +22,7 @@
 #define DEVICE_PROPS_FILE          "/etc/device.properties"
 #define WEBCONFIG_BACKUP_FILE	   "/nvram/webconfigBackup.json"
 #define WEBCFG_INTERFACE_DEFAULT   "erouter0"
-#define MAX_BUF_SIZE	           4096
+#define MAX_BUF_SIZE	           256
 #define WEB_CFG_FILE		      "/nvram/webConfig.json"
 #define MAX_PARAMETERNAME_LEN			4096
 #define WEBPA_READ_HEADER             "/etc/parodus/parodus_read_file.sh"
@@ -54,12 +54,14 @@ int storeGetValues(param_t *reqObj, int paramCount, param_t **storeGetValue);
 /*                             External Functions                             */
 /*----------------------------------------------------------------------------*/
 
-void initWebConfigTask()
+void initWebConfigTask(int status)
 {
 	int err = 0;
 	pthread_t threadId;
+	int *device_status = (int *) malloc(sizeof(int));
+	*device_status = status;
 
-	err = pthread_create(&threadId, NULL, WebConfigTask, NULL);
+	err = pthread_create(&threadId, NULL, WebConfigTask, (void *) device_status);
 	if (err != 0) 
 	{
 		WalError("Error creating WebConfigTask thread :[%s]\n", strerror(err));
@@ -70,48 +72,291 @@ void initWebConfigTask()
 	}
 }
 
-static void *WebConfigTask()
+static void *WebConfigTask(void *status)
 {
 	pthread_detach(pthread_self());
-	int status = -1;
+	int configRet = -1;
 	char *webConfigData = NULL;
 	int r_count;
+	long res_code;
 	//int index;
 	int json_status=-1;
-	
-	WalInfo("--------------Start of WebConfigTask ----------\n");
+	int backoffRetryTime = 0;
+	int backoff_max_time = 9;
+        int max_retry_sleep;
+    	int c=2;
+
+	max_retry_sleep = (int) pow(2, backoff_max_time) -1;
+        WalInfo("max_retry_sleep is %d\n", max_retry_sleep );
+
 	while(1)
 	{
-		//TODO: iterate through all entries in Device.X_RDK_WebConfig.ConfigFile.[i].URL to check if the current stored version of each configuration document matches the latest version on the cloud.  
-		
-		status = requestWebConfigData(webConfigData, r_count, index);
+		//TODO: iterate through all entries in Device.X_RDK_WebConfig.ConfigFile.[i].URL to check if the current stored version of each configuration document matches the latest version on the cloud. 
 
-		WalInfo("webConfigData is %s\n", webConfigData);
-	
-		if(status == 0)
+		if(backoffRetryTime < max_retry_sleep)
 		{
-			WalInfo("webConfigData fetched successfully\n");
-			json_status = processJsonDocument(webConfigData);
-			if(json_status)
+		  backoffRetryTime = (int) pow(2, c) -1;
+		}
+		WalInfo("New backoffRetryTime value calculated as %d seconds\n", backoffRetryTime);
+
+		configRet = requestWebConfigData(&webConfigData, r_count, index, *(int *)status, &res_code);
+		WAL_FREE(status);
+
+		WalInfo("res_code:%lu webConfigData is %s\n", res_code, webConfigData);
+
+		if(configRet == 0)
+		{
+			if(response_code == 304)
 			{
-				WalInfo("processJsonDocument success\n");
+				WalInfo("webConfig is in sync with cloud. response_code:%d\n", response_code); //:TODO do sync check OK
+				break;
+			}
+			else if(response_code == 200)
+			{
+				WalInfo("webConfig is not in sync with cloud. response_code:%d\n", response_code);
+
+				if(webConfigData !=NULL)
+				{
+					WalInfo("webConfigData fetched successfully\n");
+					json_status = processJsonDocument(webConfigData);
+					if(json_status == 1)
+					{
+						WalInfo("processJsonDocument success\n");
+					}
+					else
+					{
+						WalError("Failure in processJsonDocument\n");
+						//check here do we need to retry.?
+					}
+				}
+				break;
+			}
+			else if(response_code == 204)
+			{
+				WalInfo("No action required from client. response_code:%d\n", response_code);
+				break;
 			}
 			else
 			{
-				WalError("Failure in processJsonDocument\n");
-				break;
+				WalError("Error code returned, need to retry. response_code:%d\n", response_code);
 			}
 		}
 		else
 		{
-			WalError("Failed to get webConfigData or already in sync\n");	
-			break;
+			WalError("Failed to get webConfigData from cloud\n");	
 		}
+		WalInfo("requestWebConfigData backoffRetryTime %d seconds\n", backoffRetryTime);
+		sleep(backoffRetryTime);
+		c++;
 	}
 	WalInfo("--------------End of WebConfigTask ----------\n");
 	return NULL;
 }
 
+
+/*
+* @brief Initialize curl object with required options. create configData using libcurl.
+* @param[out] configData 
+* @param[in] len total configData size
+* @param[in] r_count Number of curl retries on ipv4 and ipv6 mode during failure
+* @return returns 0 if success, otherwise failed to fetch auth token and will be retried.
+*/
+int requestWebConfigData(char **configData, int r_count, int index, int status, long *code)
+{
+	CURL *curl;
+	CURLcode res;
+	CURLcode time_res;
+	struct curl_slist *list = NULL;
+	struct curl_slist *headers_list = NULL;
+	int i = index, rv=1;
+
+	char *auth_header = NULL;
+	char *version_header = NULL;
+	double total;
+	long response_code = 0;
+	char *interface = NULL;
+	char *ct = NULL;
+	char *URL_param = NULL;
+	char *webConfigURL= NULL;
+	DATA_TYPE paramType;
+	int content_res=0;
+	struct token_data data;
+	data.size = 0;
+
+	WalInfo("-----------Start of requestWebConfigData----------\n");
+	curl = curl_easy_init();
+	if(curl)
+	{
+		//this memory will be dynamically grown by write call back fn as required
+		data.data = (char *) malloc(sizeof(char) * 1);
+		if(NULL == data.data)
+		{
+			WalError("Failed to allocate memory.\n");
+			return rv;
+		}
+		data.data[0] = '\0';
+		WalInfo("B4 createCurlheader status is %d\n", status);
+		createCurlheader(auth_header, version_header, list, &headers_list, status);
+		WalInfo("createCurlheader done\n");
+
+		URL_param = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+		if(URL_param !=NULL)
+		{
+			//snprintf(URL_param, MAX_BUF_SIZE, "Device.X_RDK_WebConfig.ConfigFile.[%d].URL", i);//testing purpose.
+			WalInfo("deviceMAC is %s\n", deviceMac);
+			snprintf(URL_param, MAX_BUF_SIZE, "http://96.116.56.207:8080/api/v4/gateway-cpe/%s/config/voice", deviceMac);
+			WalInfo("URL_param is %s\n", URL_param);
+
+			webConfigURL = strdup(URL_param); //testing. remove this.
+			WalInfo("webConfigURL after alloc is %s\n", webConfigURL);
+			//webConfigURL = getParameterValue(URL_param, &paramType);
+			//WalInfo("requestWebConfigData . paramType is %d\n", paramType);
+			curl_easy_setopt(curl, CURLOPT_URL, webConfigURL );
+		}
+		
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_TIMEOUT_SEC);
+
+		WalInfo("B4 get_webCfg_interface\n");
+		get_webCfg_interface(&interface);
+		WalInfo("get_webCfg_interface is %s\n", interface);
+
+		if(interface !=NULL && strlen(interface) >0)
+		{
+			curl_easy_setopt(curl, CURLOPT_INTERFACE, interface);
+		}
+		// set callback for writing received data 
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback_fn);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers_list);
+
+		// setting curl resolve option as default mode.
+		//If any failure, retry with v4 first and then v6 mode. 
+
+		if(r_count == 1)
+		{
+			WalInfo("curl Ip resolve option set as V4 mode\n");
+			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+		}
+		else if(r_count == 2)
+		{
+			WalInfo("curl Ip resolve option set as V6 mode\n");
+			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
+		}
+		else
+		{
+			WalInfo("curl Ip resolve option set as default mode\n");
+			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_WHATEVER);
+		}
+
+		// set the cert for client authentication 
+		//curl_easy_setopt(curl, CURLOPT_SSLCERT, CLIENT_CERT_PATH);
+
+		WalInfo("setting CURLOPT_CAINFO\n");
+		curl_easy_setopt(curl, CURLOPT_CAINFO, CA_CERT_PATH);
+
+		// disconnect if it is failed to validate server's cert 
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+		
+		// Verify the certificate's name against host 
+		WalInfo("setting CURLOPT_SSL_VERIFYHOST\n");
+  		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+		// To use TLS version 1.2 or later 
+		WalInfo("setting CURLOPT_SSLVERSION\n"
+  		curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+
+		// To follow HTTP 3xx redirections
+		WalInfo("setting CURLOPT_FOLLOWLOCATION\n"
+  		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+
+		WalInfo("B4 curl_easy_perform\n");
+		// Perform the request, res will get the return code 
+		res = curl_easy_perform(curl);
+
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+		WalInfo("webConfig curl response %d http_code %d\n", res, response_code);
+		*code = response_code;
+
+		time_res = curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
+		if(time_res == 0)
+		{
+			WalInfo("curl response Time: %.1f seconds\n", total);
+		}
+		curl_slist_free_all(headers_list);
+		WalInfo("free for URL_param\n");
+		WAL_FREE(URL_param);
+		WalInfo("free for webConfigURL\n");
+		WAL_FREE(webConfigURL);
+		WalInfo("After webConfigURL free\n");
+		if(res != 0)
+		{
+			WalError("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+		}
+		else
+		{
+			content_res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
+			if(!content_res && ct)
+			{
+				WalInfo("Content-Type: %s\n", ct);
+				if(strcmp(ct, "application/json") !=0)
+				{
+					WalError("Invalid Content-Type\n");
+				}
+				else
+				{
+					WalInfo("Content-Type is valid : %c\n", ct);
+					*configData = strdup(data.data);
+					WalInfo("configData received from cloud is %s\n", *configData);
+				}
+			}
+			
+		}
+		WAL_FREE(data.data);
+		curl_easy_cleanup(curl);
+		rv=0;
+	}
+	else
+	{
+		WalError("curl init failure\n");
+	}
+
+	WalInfo("-----------End of requestWebConfigData----------\n");
+	return rv;
+}
+
+/* @brief callback function for writing libcurl received data
+ * @param[in] buffer curl delivered data which need to be saved.
+ * @param[in] size size is always 1
+ * @param[in] nmemb size of delivered data
+ * @param[out] data curl response data saved.
+*/
+size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data)
+{
+    size_t index = data->size;
+    size_t n = (size * nmemb);
+    char* tmp;
+
+    data->size += (size * nmemb);
+
+    tmp = realloc(data->data, data->size + 1); // +1 for '\0' 
+
+    if(tmp) {
+        data->data = tmp;
+    } else {
+        if(data->data) {
+            free(data->data);
+        }
+        WalError("Failed to allocate memory for data\n");
+        return 0;
+    }
+
+    memcpy((data->data + index), buffer, n);
+    data->data[data->size] = '\0';
+
+    return size * nmemb;
+}
 
 int processJsonDocument(char *jsonData)
 {
@@ -337,11 +582,7 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 	if((jsonData !=NULL) && (strlen(jsonData)>0))
 	{
 		json = cJSON_Parse( jsonData );
-		if(jsonData !=NULL)
-		{
-			free( jsonData );
-			jsonData = NULL;
-		}
+		WAL_FREE(jsonData);
 
 		if( json == NULL )
 		{
@@ -350,7 +591,7 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 		}
 		else
 		{
-			isValid = validateConfigFormat(json, "NONE"); //check eTAG value here :TODO
+			isValid = validateConfigFormat(json, ETAG); //check eTAG value here :TODO
 			WalInfo("isValid is %d\n", isValid);
 			if(isValid)// testing purpose. make it to !isValid
 			{
@@ -383,7 +624,7 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 	return rv;
 }
 
-int validateConfigFormat(cJSON *json, char *ETAG)
+int validateConfigFormat(cJSON *json, char *eTag)
 {
 	cJSON *versionObj =NULL;
 	cJSON *paramArray = NULL;
@@ -398,7 +639,7 @@ int validateConfigFormat(cJSON *json, char *ETAG)
 			version = cJSON_GetObjectItem( json, "version" )->valuestring;
 			if(version !=NULL)
 			{
-				if(strcmp(version, ETAG) == 0)
+				if(strcmp(version, eTag) == 0)
 				{
 					WalInfo("version are ETAG are same\n");
 					//check parameters
@@ -441,227 +682,6 @@ int validateConfigFormat(cJSON *json, char *ETAG)
 
 	return 0;
 
-}
-
-/*
-* @brief Initialize curl object with required options. create configData using libcurl.
-* @param[out] configData 
-* @param[in] len total configData size
-* @param[in] r_count Number of curl retries on ipv4 and ipv6 mode during failure
-* @return returns 0 if success, otherwise failed to fetch auth token and will be retried.
-*/
-int requestWebConfigData(char *configData, int r_count, int index)
-{
-	CURL *curl;
-	CURLcode res;
-	CURLcode time_res;
-	struct curl_slist *list = NULL;
-	struct curl_slist *headers_list = NULL;
-	int i = index;
-
-	char *auth_header = NULL;
-	char *version_header = NULL;
-	double total;
-	long response_code;
-	char *interface = NULL;
-	char *URL_param = NULL;
-	char *webConfigURL= NULL;
-	DATA_TYPE paramType;
-	int content_res=0;
-	struct token_data data;
-	data.size = 0;
-
-	WalInfo("-----------Start of requestWebConfigData----------\n");
-	curl = curl_easy_init();
-	if(curl)
-	{
-		//this memory will be dynamically grown by write call back fn as required
-		data.data = (char *) malloc(sizeof(char) * 1);
-		if(NULL == data.data)
-		{
-			WalError("Failed to allocate memory.\n");
-			return -1;
-		}
-		data.data[0] = '\0';
-		WalInfo("B4 createCurlheader\n");
-		createCurlheader(auth_header, version_header, list, &headers_list);
-		WalInfo("createCurlheader done\n");
-
-		URL_param = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
-		if(URL_param !=NULL)
-		{
-			//snprintf(URL_param, MAX_BUF_SIZE, "Device.X_RDK_WebConfig.ConfigFile.[%d].URL", i);//testing purpose.
-			WalInfo("deviceMAC is %s\n", deviceMac);
-			snprintf(URL_param, MAX_BUF_SIZE, "http://96.116.56.207:8080/api/v4/gateway-cpe/%s/config/voice", deviceMac);
-			WalInfo("URL_param is %s\n", URL_param);
-
-			webConfigURL = strdup(URL_param); //testing. remove this.
-			WalInfo("webConfigURL after alloc is %s\n", webConfigURL);
-			//webConfigURL = getParameterValue(URL_param, &paramType);
-			//WalInfo("requestWebConfigData . paramType is %d\n", paramType);
-			curl_easy_setopt(curl, CURLOPT_URL, webConfigURL );
-		}
-		
-		curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_TIMEOUT_SEC);
-
-		WalInfo("B4 get_webCfg_interface\n");
-		get_webCfg_interface(&interface);
-		WalInfo("get_webCfg_interface is %s\n", interface);
-
-		if(interface !=NULL && strlen(interface) >0)
-		{
-			curl_easy_setopt(curl, CURLOPT_INTERFACE, interface);
-		}
-		// set callback for writing received data 
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback_fn);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers_list);
-
-		// setting curl resolve option as default mode.
-		//If any failure, retry with v4 first and then v6 mode. 
-
-		if(r_count == 1)
-		{
-			WalInfo("curl Ip resolve option set as V4 mode\n");
-			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-		}
-		else if(r_count == 2)
-		{
-			WalInfo("curl Ip resolve option set as V6 mode\n");
-			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
-		}
-		else
-		{
-			WalInfo("curl Ip resolve option set as default mode\n");
-			curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_WHATEVER);
-		}
-
-		// set the cert for client authentication 
-		//curl_easy_setopt(curl, CURLOPT_SSLCERT, CLIENT_CERT_PATH);
-
-		WalInfo("setting CURLOPT_CAINFO\n");
-		curl_easy_setopt(curl, CURLOPT_CAINFO, CA_CERT_PATH);
-
-		// disconnect if it is failed to validate server's cert 
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-
-		WalInfo("B4 curl_easy_perform\n");
-		// Perform the request, res will get the return code 
-		res = curl_easy_perform(curl);
-
-		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-		WalInfo("webConfig curl response %d http_code %d\n", res, response_code);
-
-		time_res = curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total);
-		if(time_res == 0)
-		{
-			WalInfo("curl response Time: %.1f seconds\n", total);
-		}
-		curl_slist_free_all(headers_list);
-		WalInfo("free for URL_param\n");
-		if(URL_param !=NULL)
-		{
-			free(URL_param);
-			URL_param = NULL;
-		}
-		WalInfo("free for webConfigURL\n");
-		if(webConfigURL !=NULL)
-		{
-			free(webConfigURL);
-			webConfigURL = NULL;
-		}
-		WalInfo("After webConfigURL free\n");
-		if(res != 0)
-		{
-			WalError("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-			curl_easy_cleanup(curl);
-			if(data.data)
-			{
-				free(data.data);
-				data.data = NULL;
-			}
-			return -1;
-		}
-		else
-		{
-			// extract the content-type
-			char *ct = NULL;
-			content_res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
-			if(!content_res && ct)
-			{
-				WalInfo("Content-Type: %s\n", ct);
-				if(strcmp(ct, "application/json")!=0)
-				{
-					WalError("Invalid Content-Type\n");
-					return -1;
-				}
-				else
-				{
-					WalInfo("Content-Type is valid : %c\n", ct);
-				}
-			}
-			if(response_code == 304)
-			{
-				WalInfo("webConfig document is in Sync with cloud\n"); //:TODO do sync check OK
-				return -1;
-				
-			}
-			else if(response_code == 200)
-			{
-				WalError("webConfig document is not in Sync with cloud!!\n");
-				configData = strdup(data.data);
-				WalInfo("configData received from cloud is %s\n", configData);
-			} //check if we need to handle other error codes.
-			
-		}
-		if(data.data)
-		{
-			free(data.data);
-			data.data = NULL;
-		}
-		curl_easy_cleanup(curl);
-	}
-	else
-	{
-		WalError("curl init failure\n");
-		return -1;
-	}
-
-	WalInfo("-----------End of requestWebConfigData----------\n");
-	return 0;
-}
-
-/* @brief callback function for writing libcurl received data
- * @param[in] buffer curl delivered data which need to be saved.
- * @param[in] size size is always 1
- * @param[in] nmemb size of delivered data
- * @param[out] data curl response data saved.
-*/
-size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data)
-{
-    size_t index = data->size;
-    size_t n = (size * nmemb);
-    char* tmp;
-
-    data->size += (size * nmemb);
-
-    tmp = realloc(data->data, data->size + 1); // +1 for '\0' 
-
-    if(tmp) {
-        data->data = tmp;
-    } else {
-        if(data->data) {
-            free(data->data);
-        }
-        WalError("Failed to allocate memory for data\n");
-        return 0;
-    }
-
-    memcpy((data->data + index), buffer, n);
-    data->data[data->size] = '\0';
-
-    return size * nmemb;
 }
 
 static void get_webCfg_interface(char **interface)
@@ -709,12 +729,15 @@ static void get_webCfg_interface(char **interface)
  * @param[in] list temp curl header list
  * @param[out] header_list output curl header list
 */
-void createCurlheader(char *auth_header, char *version_header, struct curl_slist *list, struct curl_slist **header_list)
+void createCurlheader( struct curl_slist *list, struct curl_slist **header_list, int status)
 {
-	char *cur_firmware_ver = NULL;
-	//int ETAG_version = 0;
-	DATA_TYPE paramType;
-	char *auth_token = NULL;
+	char *version_header = NULL;
+	char *auth_token = NULL, *auth_header = NULL;
+	char *bootTime = NULL, *bootTime_header = NULL;
+	char *FwVersion = NULL, *FwVersion_header=NULL;
+	char *systemReadyTime = NULL;
+	struct timespec cTime;
+	char currentTime[32];
 
 	//Fetch auth JWT token from cloud.
 	WalInfo("Fetch auth JWT token from cloud\n");
@@ -723,14 +746,16 @@ void createCurlheader(char *auth_header, char *version_header, struct curl_slist
 
 	if(auth_token !=NULL)
 	{
-		auth_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+		auth_header = (char *) malloc(sizeof(char)*MAX_PARAMETERNAME_LEN);
 		if(auth_header !=NULL)
 		{
-			snprintf(auth_header, MAX_BUF_SIZE, "Authorization:Bearer %s", auth_token);
+			snprintf(auth_header, MAX_PARAMETERNAME_LEN, "Authorization:Bearer %s", auth_token);
 			WalInfo("auth_header formed %s\n", auth_header);
 			list = curl_slist_append(list, auth_header);
-			free(auth_header);
-			auth_header = NULL;
+			WalInfo("free for auth_token\n");
+			WAL_FREE(auth_token);
+			WAL_FREE(auth_header);
+			WalInfo("free for auth_header done\n");
 		}
 	}
 	else
@@ -741,16 +766,14 @@ void createCurlheader(char *auth_header, char *version_header, struct curl_slist
 	version_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
 	if(version_header !=NULL)
 	{
-		//cur_firmware_ver = getParameterValue(FIRMWARE_VERSION, &paramType);
-		//WalInfo("createCurlheader . cur_firmware_ver is %s paramType is %d\n", cur_firmware_ver, paramType);
+		//cur_firmware_ver = getParameterValue(FIRMWARE_VERSION);
 		//snprintf(version_header, MAX_BUF_SIZE, "IF-NONE-MATCH:[%s]-[%d]", cur_firmware_ver, ETAG_version);
 		if(ETAG !=NULL)
 		{
 			snprintf(version_header, MAX_BUF_SIZE, "XV-Version:%s", ETAG);
 			WalInfo("version_header formed %s\n", version_header);
 			list = curl_slist_append(list, version_header);
-			free(version_header);
-			version_header = NULL;
+			WAL_FREE(version_header);
 		}
 		else
 		{
@@ -758,6 +781,95 @@ void createCurlheader(char *auth_header, char *version_header, struct curl_slist
 		}
 	}
 
+	bootTime = getParameterValue(DEVICE_BOOT_TIME);
+	WalInfo("bootTime in createCurlheader is %s\n", bootTime);
+	if(bootTime !=NULL)
+	{
+		bootTime_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+		if(bootTime_header !=NULL)
+		{
+			snprintf(bootTime_header, MAX_BUF_SIZE, "X-System-Boot-Time: %s", bootTime);
+			WalInfo("bootTime_header formed %s\n", bootTime_header);
+			list = curl_slist_append(list, bootTime_header);
+			WAL_FREE(bootTime_header);
+		}
+		WAL_FREE(bootTime);
+	}
+	else
+	{
+		WalError("Failed to get bootTime\n");
+	}
+
+	FwVersion = getParameterValue(FIRMWARE_VERSION);
+	WalInfo("FwVersion in createCurlheader is %s\n", FwVersion);
+	if(FwVersion !=NULL)
+	{
+		FwVersion_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+		if(FwVersion_header !=NULL)
+		{
+			snprintf(FwVersion_header, MAX_BUF_SIZE, "X-System-Firmware-Version: %s", FwVersion);
+			WalInfo("FwVersion_header formed %s\n", FwVersion_header);
+			list = curl_slist_append(list, FwVersion_header);
+			WAL_FREE(FwVersion_header);
+		}
+		WAL_FREE(FwVersion);
+	}
+	else
+	{
+		WalError("Failed to get FwVersion\n");
+	}
+
+	status_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+	if(status_header !=NULL)
+	{
+		WalInfo("status value in createCurlheader is %d\n", status);
+		if(status !=0)
+		{
+			snprintf(status_header, MAX_BUF_SIZE, "X-System-Status: %s", "Non-Operational");
+		}
+		else
+		{
+			snprintf(status_header, MAX_BUF_SIZE, "X-System-Status: %s", "Operational");
+		}
+		WalInfo("status_header formed %s\n", status_header);
+		list = curl_slist_append(list, status_header);
+		WAL_FREE(status_header);
+	}
+
+	WalInfo("calculating currentTime\n");
+	memset(currentTime, 0, sizeof(currentTime));
+	getCurrentTime(&cTime);
+	snprintf(currentTime,sizeof(currentTime),"%d",(int)cTime.tv_sec);
+	WalInfo("currentTime is %s\n",currentTime);
+	currentTime_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+	if(currentTime_header !=NULL)
+	{
+		snprintf(currentTime_header, MAX_BUF_SIZE, "X-System-Current-Time: %s", currentTime);
+		WalInfo("currentTime_header formed %s\n", currentTime_header);
+		list = curl_slist_append(list, currentTime_header);
+		WAL_FREE(currentTime_header);
+	}
+
+	WalInfo("Fetching systemReadyTime\n");
+	systemReadyTime = get_global_systemReadyTime();
+	WalInfo("systemReadyTime is %s\n",systemReadyTime);
+	if(systemReadyTime !=NULL)
+	{
+		systemReadyTime_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
+		if(systemReadyTime_header !=NULL)
+		{
+			snprintf(systemReadyTime_header, MAX_BUF_SIZE, "X-System-Ready-Time: %s", systemReadyTime);
+			WalInfo("systemReadyTime_header formed %s\n", systemReadyTime_header);
+			list = curl_slist_append(list, systemReadyTime_header);
+			WAL_FREE(systemReadyTime_header);
+		}
+		WAL_FREE(systemReadyTime);
+	}
+	else
+	{
+		WalError("Failed to get systemReadyTime\n");
+	}
+	WalInfo("Fetched all values for header\n");
 	*header_list = list;
 }
 

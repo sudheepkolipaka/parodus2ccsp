@@ -61,9 +61,11 @@ int main()
 	initNotifyTask(ret);
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	WalInfo("B4 initWebConfigTask\n");
-	initWebConfigTask();
+	initWebConfigTask(ret);
 	parodus_receive_wait();
  
+	WalInfo("Doing curl_global_cleanup\n");
+	curl_global_cleanup();
 	WalInfo("Exiting webpa main thread!!\n");
 	return 1;
 }

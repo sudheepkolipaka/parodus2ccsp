@@ -32,7 +32,7 @@ struct token_data {
 
 #define SERIAL_NUMBER 		     "Device.DeviceInfo.SerialNumber"
 #define FIRMWARE_VERSION       	     "Device.DeviceInfo.X_CISCO_COM_FirmwareName"
-
+#define DEVICE_BOOT_TIME             "Device.DeviceInfo.X_RDKCENTRAL-COM_BootTime"
 
 size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
 void getAuthToken(char **token);

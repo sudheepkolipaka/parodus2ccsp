@@ -222,6 +222,7 @@ void macToLower(char macValue[],char macConverted[]);
 
 int getWebpaParameterValues(char **parameterNames, int paramCount, int *val_size, parameterValStruct_t ***val);
 int setWebpaParameterValues(parameterValStruct_t *val, int paramCount, char **faultParam );
+char *get_global_systemReadyTime();
 
 BOOL get_eth_wan_status();
 
