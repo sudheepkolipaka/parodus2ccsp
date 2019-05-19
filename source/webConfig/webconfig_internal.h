@@ -35,7 +35,7 @@ struct token_data {
 #define DEVICE_BOOT_TIME             "Device.DeviceInfo.X_RDKCENTRAL-COM_BootTime"
 
 size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
-void getAuthToken(char **token);
+void getAuthToken(char *webpa_auth_token);
 
 
 #endif /* _WEBCONFIG_INTERNAL_H_ */

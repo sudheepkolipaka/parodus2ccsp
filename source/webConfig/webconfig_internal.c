@@ -44,9 +44,9 @@ static void *WebConfigTask();
 int readFromJSON(char **data);
 int processJsonDocument(char *jsonData);
 int validateConfigFormat(cJSON *json, char *etag);
-int requestWebConfigData(char *configData, int r_count, int index);
+int requestWebConfigData(char **configData, int r_count, int index, int status, long *code);
 static void get_webCfg_interface(char **interface);
-void createCurlheader(char *auth_header, char *version_header, struct curl_slist *list, struct curl_slist **header_list);
+void createCurlheader(struct curl_slist *list, struct curl_slist **header_list, int status);
 size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
 WDMP_STATUS setConfigParamValues( param_t paramVal[], int paramCount );
 int storeGetValues(param_t *reqObj, int paramCount, param_t **storeGetValue);
@@ -79,7 +79,7 @@ static void *WebConfigTask(void *status)
 	char *webConfigData = NULL;
 	int r_count;
 	long res_code;
-	//int index;
+	int index;
 	int json_status=-1;
 	int backoffRetryTime = 0;
 	int backoff_max_time = 9;
@@ -106,14 +106,14 @@ static void *WebConfigTask(void *status)
 
 		if(configRet == 0)
 		{
-			if(response_code == 304)
+			if(res_code == 304)
 			{
-				WalInfo("webConfig is in sync with cloud. response_code:%d\n", response_code); //:TODO do sync check OK
+				WalInfo("webConfig is in sync with cloud. response_code:%d\n", res_code); //:TODO do sync check OK
 				break;
 			}
-			else if(response_code == 200)
+			else if(res_code == 200)
 			{
-				WalInfo("webConfig is not in sync with cloud. response_code:%d\n", response_code);
+				WalInfo("webConfig is not in sync with cloud. response_code:%d\n", res_code);
 
 				if(webConfigData !=NULL)
 				{
@@ -131,14 +131,14 @@ static void *WebConfigTask(void *status)
 				}
 				break;
 			}
-			else if(response_code == 204)
+			else if(res_code == 204)
 			{
-				WalInfo("No action required from client. response_code:%d\n", response_code);
+				WalInfo("No action required from client. response_code:%d\n", res_code);
 				break;
 			}
 			else
 			{
-				WalError("Error code returned, need to retry. response_code:%d\n", response_code);
+				WalError("Error code returned, need to retry. response_code:%d\n", res_code);
 			}
 		}
 		else
@@ -196,7 +196,7 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 		}
 		data.data[0] = '\0';
 		WalInfo("B4 createCurlheader status is %d\n", status);
-		createCurlheader(auth_header, version_header, list, &headers_list, status);
+		createCurlheader(list, &headers_list, status);
 		WalInfo("createCurlheader done\n");
 
 		URL_param = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
@@ -263,11 +263,11 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
   		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
 		// To use TLS version 1.2 or later 
-		WalInfo("setting CURLOPT_SSLVERSION\n"
+		WalInfo("setting CURLOPT_SSLVERSION\n");
   		curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
 		// To follow HTTP 3xx redirections
-		WalInfo("setting CURLOPT_FOLLOWLOCATION\n"
+		WalInfo("setting CURLOPT_FOLLOWLOCATION\n");
   		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
 
@@ -732,36 +732,41 @@ static void get_webCfg_interface(char **interface)
 void createCurlheader( struct curl_slist *list, struct curl_slist **header_list, int status)
 {
 	char *version_header = NULL;
-	char *auth_token = NULL, *auth_header = NULL;
+	//char *auth_token = NULL;
+	char webpa_auth_token[4096]; //do memset for this.
+	char *auth_header = NULL;
+	char *status_header=NULL;
 	char *bootTime = NULL, *bootTime_header = NULL;
 	char *FwVersion = NULL, *FwVersion_header=NULL;
-	char *systemReadyTime = NULL;
+	char *systemReadyTime = NULL, *systemReadyTime_header=NULL;
 	struct timespec cTime;
 	char currentTime[32];
+	char *currentTime_header=NULL;
 
 	//Fetch auth JWT token from cloud.
 	WalInfo("Fetch auth JWT token from cloud\n");
-	getAuthToken(&auth_token); //check curl retry for 5min backoff
-	WalInfo("auth_token is %s\n", auth_token);
+	getAuthToken(webpa_auth_token); //check curl retry for 5min backoff
+	WalInfo("webpa_auth_token is %s\n", webpa_auth_token);
 
-	if(auth_token !=NULL)
-	{
+	//if(webpa_auth_token !=NULL)
+	//{
 		auth_header = (char *) malloc(sizeof(char)*MAX_PARAMETERNAME_LEN);
 		if(auth_header !=NULL)
 		{
-			snprintf(auth_header, MAX_PARAMETERNAME_LEN, "Authorization:Bearer %s", auth_token);
+			WalInfo("framing auth_header\n");
+			snprintf(auth_header, MAX_PARAMETERNAME_LEN, "Authorization:Bearer %s", (0 < strlen(webpa_auth_token) ? webpa_auth_token : NULL));
 			WalInfo("auth_header formed %s\n", auth_header);
 			list = curl_slist_append(list, auth_header);
-			WalInfo("free for auth_token\n");
-			WAL_FREE(auth_token);
+			//WalInfo("free for webpa_auth_token\n");
+			//WAL_FREE(auth_token);
 			WAL_FREE(auth_header);
 			WalInfo("free for auth_header done\n");
 		}
-	}
-	else
-	{
-		WalError("Failed to create auth header\n");
-	}
+	//}
+	//else
+	//{
+	//	WalError("Failed to create auth header\n");
+	//}
 
 	version_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
 	if(version_header !=NULL)
@@ -855,14 +860,18 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
 	WalInfo("systemReadyTime is %s\n",systemReadyTime);
 	if(systemReadyTime !=NULL)
 	{
+		WalInfo("allocating systemReadyTime_header\n");
 		systemReadyTime_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
 		if(systemReadyTime_header !=NULL)
 		{
+			WalInfo("snprintf for systemReadyTime_header\n");
 			snprintf(systemReadyTime_header, MAX_BUF_SIZE, "X-System-Ready-Time: %s", systemReadyTime);
 			WalInfo("systemReadyTime_header formed %s\n", systemReadyTime_header);
 			list = curl_slist_append(list, systemReadyTime_header);
+			WalInfo("B4 systemReadyTime_header\n");
 			WAL_FREE(systemReadyTime_header);
 		}
+		WalInfo("free for systemReadyTime\n");
 		WAL_FREE(systemReadyTime);
 	}
 	else
@@ -925,14 +934,14 @@ void createNewAuthToken(char *newToken, size_t len, char *hw_mac, char* hw_seria
 * it will call createNewAuthToken to create and read new token
 */
 
-void getAuthToken(char **token)
+void getAuthToken(char *webpa_auth_token)
 {
 	//local var to update webpa_auth_token only in success case
 	char output[4069] = {'\0'} ;
 	char *macID = NULL;
 	char deviceMACValue[32] = { '\0' };
 	char *hw_serial_number=NULL;
-	char webpa_auth_token[4096];
+	//char webpa_auth_token[4096];
 
 	if( strlen(WEBPA_READ_HEADER) !=0 && strlen(WEBPA_CREATE_HEADER) !=0)
 	{
@@ -961,15 +970,15 @@ void getAuthToken(char **token)
 					WalInfo("Failed to read token from %s. Proceeding to create new token.\n",WEBPA_READ_HEADER);
 					//Call create/acquisition script
 					createNewAuthToken(webpa_auth_token, sizeof(webpa_auth_token), deviceMac, hw_serial_number );
-					*token = (char*)webpa_auth_token;
+					//*token = (char*)webpa_auth_token;
+					WalInfo("webpa_auth_token is %s\n", webpa_auth_token );
 				}
 				else
 				{
 					WalInfo("update webpa_auth_token in success case\n");
 					walStrncpy(webpa_auth_token, output, sizeof(webpa_auth_token));
 					WalInfo("webpa_auth_token is %s\n", webpa_auth_token );
-					*token = (char*)webpa_auth_token;
-					WalInfo("*token is %s\n", *token );
+					//*token = (char*)webpa_auth_token;
 				}
 			}
 			else
