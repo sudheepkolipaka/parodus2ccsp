@@ -573,11 +573,14 @@ int storeGetValues(param_t *getParamVal, int paramCount, param_t **storeGetValue
 int parseJsonData(char* jsonData, req_struct **req_obj)
 {
 	cJSON *json = NULL;
+	cJSON *paramData = NULL;
+	cJSON *paramArray = NULL;
 	int i=0, isValid =0;
 	int rv =-1;
 	req_struct *reqObj = NULL;
 	int paramCount=0;
 	WDMP_STATUS ret = WDMP_FAILURE, valid_ret = WDMP_FAILURE;
+	int itemSize=0;
 
 	if((jsonData !=NULL) && (strlen(jsonData)>0))
 	{
@@ -601,9 +604,19 @@ int parseJsonData(char* jsonData, req_struct **req_obj)
 			(reqObj) = (req_struct *) malloc(sizeof(req_struct));
                 	memset((reqObj), 0, sizeof(req_struct));
 
-			WalInfo("B4 parse_set_request\n");
-			parse_set_request(json, &reqObj, "WDMP_TR181");
+			//testing purpose as json format is differnt in test server
+			paramData = cJSON_GetObjectItem( json, "data" );
+			paramArray = cJSON_GetObjectItem( paramData, "parameters" );
+			if( paramArray != NULL )
+			{
+				itemSize = cJSON_GetArraySize( paramArray );
+				WalInfo("itemSize is %d\n", itemSize);
+			}
 
+			WalInfo("B4 parse_set_request\n");
+			//parse_set_request(json, &reqObj, "WDMP_TR181"); testing purpose.
+			parse_set_request(paramData, &reqObj, "WDMP_TR181");
+			WalInfo("After parse_set_request\n");
 			if(reqObj != NULL)
         		{
 				WalInfo("parse_set_request done\n");
