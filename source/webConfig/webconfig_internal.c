@@ -380,7 +380,7 @@ int processJsonDocument(char *jsonData)
 
 	WalInfo("parseStatus is %d\n", parseStatus);
 
-	if(parseStatus)
+	if(parseStatus ==1)
 	{
 
 		WalInfo("Request:> Type : %d\n",reqObj->reqType);

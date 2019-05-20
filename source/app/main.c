@@ -55,13 +55,13 @@ int main()
 	WalInfo("Syncing backend manager with DB....\n");
 	CosaWebpaSyncDB();
 	WalInfo("Webpa banckend manager is in sync with DB\n");
-	initComponentCaching();
+	initComponentCaching(ret);
 	// Initialize Apply WiFi Settings handler
 	initApplyWiFiSettings();
 	initNotifyTask(ret);
 	curl_global_init(CURL_GLOBAL_DEFAULT);
-	WalInfo("B4 initWebConfigTask\n");
-	initWebConfigTask(ret);
+	//WalInfo("B4 initWebConfigTask\n");
+	//initWebConfigTask(ret);
 	parodus_receive_wait();
  
 	WalInfo("Doing curl_global_cleanup\n");
