@@ -14,6 +14,6 @@
 
 #define WebcfgError(...)	cimplog_error(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
 #define WebcfgInfo(...)		cimplog_info(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
-#define WebcfgDebug(...)	cimplog_debug(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
+#define WebcfgDebug(...)	cimplog_info(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
 
 #endif /* _WEBCONFIG_LOG_H_ */
