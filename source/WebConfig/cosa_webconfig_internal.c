@@ -30,7 +30,7 @@
 #define WEBCONFIG_TABLE_CONFIGFILE          "Device.X_RDK_WebConfig.ConfigFile."
 #define CONFIGFILE_PARAM_URL                "URL"
 #define CONFIGFILE_PARAM_VERSION            "Version"
-#define CONFIGFILE_PARAM_FORCE_SYNC         "ForceSyncCheck"
+#define CONFIGFILE_PARAM_FORCE_SYNC         "ForceSync"
 #define CONFIGFILE_PARAM_SYNC_CHECK_OK      "SyncCheckOK"
 #define CONFIGFILE_PARAM_REQUEST_TIME_STAMP     "RequestTimeStamp"
 
@@ -516,31 +516,40 @@ int setSyncCheckOK(int index, BOOL status)
 	return 0;
 }
 
-BOOL getForceSyncCheckFromWebConfigCtx(ANSC_HANDLE hInsContext, BOOL *pBool )
+BOOL getForceSyncFromWebConfigCtx(ANSC_HANDLE hInsContext, char *pValue )
 {
 	PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT   pWebConfigCxtLink     = (PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT)hInsContext;
 	PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY pConfigFileEntry  = (PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)pWebConfigCxtLink->hContext;
-	WebcfgDebug("------- %s ----- ENTER ----\n",__FUNCTION__);
+	WebConfigLog("------- %s ----- ENTER ----\n",__FUNCTION__);
 	if(pConfigFileEntry)
 	{
-		*pBool = pConfigFileEntry->ForceSyncCheck;
+		WebConfigLog("copying pConfigFileEntry->ForceSync %s to pValue\n", pConfigFileEntry->ForceSync);
+		AnscCopyString(pValue, pConfigFileEntry->ForceSync);
 		return TRUE;
 	}
-	WebcfgDebug("------- %s ----- EXIT ----\n",__FUNCTION__);
+	WebConfigLog("------- %s ----- EXIT ----\n",__FUNCTION__);
 	return FALSE;
 }
 
-BOOL getForceSyncCheck(int index,BOOL *pvalue )
+BOOL getForceSync(int index, char** transactionID )
 {
 	PCOSA_DATAMODEL_WEBCONFIG                   pMyObject         = (PCOSA_DATAMODEL_WEBCONFIG)g_pCosaBEManager->hWebConfig;
 	PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT    pCtxLink          = NULL;
-	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
+	char pValue[256] = {'\0'};
+	WebConfigLog("-------- %s ----- Enter ------\n",__FUNCTION__);
 	pCtxLink = CosaSListGetEntryByInsNum(&pMyObject->ConfigFileList, index);
 	if(pCtxLink)
 	{
-		if(!getForceSyncCheckFromWebConfigCtx(pCtxLink, pvalue))
+		if(!getForceSyncFromWebConfigCtx(pCtxLink, pValue))
 		{
+			*transactionID = NULL;
 			return FALSE;
+		}
+		else
+		{
+			WebConfigLog("getForceSync. pValue is %s\n", pValue);
+			*transactionID = strdup(pValue);
+			WebConfigLog("getForceSync. *transactionID is %s\n", *transactionID);
 		}
 	}
 	else
@@ -548,50 +557,58 @@ BOOL getForceSyncCheck(int index,BOOL *pvalue )
 		WebConfigLog("Table with %d index is not available\n", index);
 		return FALSE;
 	}
-	WebcfgDebug("-------- %s ----- Exit ------\n",__FUNCTION__);
+	WebConfigLog("-------- %s ----- Exit ------\n",__FUNCTION__);
 	return TRUE;
 }
 
-BOOL setForceSyncCheckWithWebConfigCtx(ANSC_HANDLE hInsContext, BOOL bValue)
+BOOL setForceSyncWithWebConfigCtx(ANSC_HANDLE hInsContext, char *pValue)
 {
 	PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT   pWebConfigCxtLink     = (PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT)hInsContext;
 	PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY pConfigFileEntry  = (PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)pWebConfigCxtLink->hContext;
-	WebcfgDebug("------- %s ----- ENTER ----\n",__FUNCTION__);
+	WebConfigLog("------- %s ----- ENTER ----\n",__FUNCTION__);
 	if(pConfigFileEntry)
 	{
-		pConfigFileEntry->ForceSyncCheck = bValue;
-		if(bValue)
+		//pConfigFileEntry->ForceSync = bValue;
+		WebConfigLog("copying pValue %s to pConfigFileEntry->ForceSync\n", pValue);
+		AnscCopyString(pConfigFileEntry->ForceSync, pValue);
+		WebConfigLog("pConfigFileEntry->ForceSync is %s\n", pConfigFileEntry->ForceSync);
+		if(pValue !=NULL && strlen(pValue>0))
 		{
+			WebConfigLog("pValue is %s len %lu\n", pValue, strlen(pValue));
 			pthread_mutex_lock (get_global_periodicsync_mutex());
 			pthread_cond_signal(get_global_periodicsync_condition());
 			pthread_mutex_unlock(get_global_periodicsync_mutex());
 		}
 		return TRUE;
 	}
-	WebcfgDebug("------- %s ----- EXIT ----\n",__FUNCTION__);
+	WebConfigLog("------- %s ----- EXIT ----\n",__FUNCTION__);
 	return FALSE;
 }
 
-BOOL setForceSyncCheck(int index, BOOL pvalue)
+int setForceSync(int index, char *transactionID)
 {
 	PCOSA_DATAMODEL_WEBCONFIG                   pMyObject         = (PCOSA_DATAMODEL_WEBCONFIG)g_pCosaBEManager->hWebConfig;
 	PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT    pCtxLink          = NULL;
-	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
+	WebConfigLog("-------- %s ----- Enter ------\n",__FUNCTION__);
 	pCtxLink = CosaSListGetEntryByInsNum(&pMyObject->ConfigFileList, index);
 	if(pCtxLink)
 	{
-		if(!setForceSyncCheckWithWebConfigCtx(pCtxLink, pvalue))
+		if(!setForceSyncWithWebConfigCtx(pCtxLink, transactionID))
 		{
-			return FALSE;
+			return 1;
+		}
+		else
+		{
+			WebConfigLog("set success with transactionID %s\n", transactionID);
 		}
 	}
 	else
 	{
 		WebConfigLog("Table with %d index is not available\n", index);
-		return FALSE;
+		return 1;
 	}
-	WebcfgDebug("-------- %s ----- Exit ------\n",__FUNCTION__);
-	return TRUE;
+	WebConfigLog("-------- %s ----- Exit ------\n",__FUNCTION__);
+	return 0;
 }
 
 void updateParamValStructWIthConfigFileDataAtIndex(parameterValStruct_t **paramVal, int index, int valIndex, int *finalIndex)
@@ -1105,19 +1122,14 @@ int setWebConfigParameterValues(parameterValStruct_t *val, int paramCount, char 
 				}
 				else if(strcmp(dmlString, CONFIGFILE_PARAM_FORCE_SYNC) == 0)
 				{
-					if(strcmp(val[i].parameterValue, "true") == 0)
+					WebConfigLog("setWebConfigParameterValues . B4 setForceSync\n");
+					ret = setForceSync(index, val[i].parameterValue);
+					if(ret != 0)
 					{
-						ret = setForceSyncCheck(index, true);
-					}
-					else
-					{
-						ret = setForceSyncCheck(index, false);
-					}
-					if(!ret)
-					{
-						WebConfigLog("setForceSyncCheck failed\n");
+						WebConfigLog("setForceSync failed\n");
 						return CCSP_FAILURE;
 					}
+					WebConfigLog("setWebConfigParameterValues . setForceSync done\n");
 				}
 				else
 				{

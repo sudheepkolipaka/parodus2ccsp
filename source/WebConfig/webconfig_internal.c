@@ -50,6 +50,7 @@ typedef struct _notify_params
 	int application_details;
 	char * request_timestamp;
 	char * version;
+	char * transaction_uuid;
 } notify_params_t;
 /*----------------------------------------------------------------------------*/
 /*                            File Scoped Variables                           */
@@ -73,19 +74,19 @@ notify_params_t *notifyMsg = NULL;
 static void *WebConfigTask(void *status);
 int processJsonDocument(char *jsonData, int *retStatus, char **docVersion);
 int validateConfigFormat(cJSON *json, char **eTag);
-int requestWebConfigData(char **configData, int r_count, int index, int status, long *code);
+int requestWebConfigData(char **configData, int r_count, int index, int status, long *code,char **transaction_id);
 static void get_webCfg_interface(char **interface);
-void createCurlheader(struct curl_slist *list, struct curl_slist **header_list, int status, int index);
+void createCurlheader(struct curl_slist *list, struct curl_slist **header_list, int status, int index, char ** trans_uuid);
 int parseJsonData(char* jsonData, req_struct **req_obj, char **version);
 size_t write_callback_fn(void *buffer, size_t size, size_t nmemb, struct token_data *data);
 void getAuthToken();
 void createNewAuthToken(char *newToken, size_t len, char *hw_mac, char* hw_serial_number);
-int handleHttpResponse(long response_code, char *webConfigData, int retry_count, int index );
+int handleHttpResponse(long response_code, char *webConfigData, int retry_count, int index,char* transaction_uuid);
 static char* generate_trans_uuid();
 static void macToLowerCase(char macValue[]);
 static void loadInitURLFromFile(char **url);
 void* processWebConfigNotification();
-void addWebConfigNotifyMsg(char *url, long status_code, char *application_status, int application_details, char *request_timestamp, char *version);
+void addWebConfigNotifyMsg(char *url, long status_code, char *application_status, int application_details, char *request_timestamp, char *version, char *transaction_uuid);
 void free_notify_params_struct(notify_params_t *param);
 char *replaceMacWord(const char *s, const char *macW, const char *deviceMACW);
 void processWebconfigSync(int index, int status);
@@ -150,6 +151,9 @@ static void *WebConfigTask(void *status)
 			WebConfigLog("reset forced_sync and syncIndex after sync\n");
 			forced_sync = 0;
 			syncIndex = 0;
+			WebConfigLog("setting setForceSync to empty after sync\n");
+			setForceSync(index,"");
+			WebConfigLog("setForceSync to empty done\n");
 		}
 		else if(!wait_flag)
 		{
@@ -198,7 +202,7 @@ static void *WebConfigTask(void *status)
 		if(!rv && !g_shutdown)
 		{
 			time(&t);
-			BOOL ForceSyncEnable;
+			char* ForceSyncTransID = NULL;
 
 			// Iterate through all indexes to check which index needs ForceSync
 			count = getConfigNumberOfEntries();
@@ -208,16 +212,16 @@ static void *WebConfigTask(void *status)
 			{
 				WebcfgDebug("B4 getInstanceNumberAtIndex for i %d\n", i);
 				index = getInstanceNumberAtIndex(i);
-				WebcfgDebug("getForceSyncCheck for index %d\n", index);
-				getForceSyncCheck(index,&ForceSyncEnable);
-				WebcfgDebug("ForceSyncEnable is %d\n", ForceSyncEnable);
-				if(ForceSyncEnable)
+				WebcfgDebug("getForceSync for index %d\n", index);
+				getForceSync(index,&ForceSyncTransID);
+				WebConfigLog("ForceSyncTransID is %s len %lu\n", ForceSyncTransID, strlen(ForceSyncTransID));
+				if((ForceSyncTransID !=NULL) && strlen(ForceSyncTransID)>0)
 				{
 					wait_flag=0;
 					forced_sync = 1;
 					syncIndex = index;
-					WebConfigLog("Received signal interrupt to getForceSyncCheck at %s\n",ctime(&t));
-					setForceSyncCheck(index,false);
+					WebConfigLog("Received signal interrupt to getForceSync at %s\n",ctime(&t));
+					//setForceSync(index,""); //check here.
 					break;
 				}
 			}
@@ -270,6 +274,7 @@ void processWebconfigSync(int index, int status)
 	char *webConfigData = NULL;
 	long res_code;
 	int rv=0;
+	char *transaction_uuid =NULL;
 
 	WebcfgDebug("========= Start of processWebconfigSync =============\n");
 	while(1)
@@ -280,10 +285,11 @@ void processWebconfigSync(int index, int status)
 			retry_count=0;
 			break;
 		}
-		configRet = requestWebConfigData(&webConfigData, r_count, index, status, &res_code);
+		configRet = requestWebConfigData(&webConfigData, r_count, index, status, &res_code, &transaction_uuid);
+		WebConfigLog("After requestWebConfigData transaction_uuid is %s\n", transaction_uuid);
 		if(configRet == 0)
 		{
-			rv = handleHttpResponse(res_code, webConfigData, retry_count, index);
+			rv = handleHttpResponse(res_code, webConfigData, retry_count, index, transaction_uuid);
 			if(rv ==1)
 			{
 				WebConfigLog("No retries are required. Exiting..\n");
@@ -303,7 +309,7 @@ void processWebconfigSync(int index, int status)
 	return;
 }
 
-int handleHttpResponse(long response_code, char *webConfigData, int retry_count, int index)
+int handleHttpResponse(long response_code, char *webConfigData, int retry_count, int index, char* transaction_uuid)
 {
 	int first_digit=0;
 	int json_status=0;
@@ -313,9 +319,11 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 	char *configVersion = NULL;
 	char *RequestTimeStamp=NULL;
 	char *newDocVersion = NULL;
+	char *syncTransactionId = NULL;
 	int err = 0;
 
         //get common items for all status codes and send notification.
+	WebConfigLog("Inside handleHttpResponse. transaction_uuid is %s\n", transaction_uuid);
         getRet = getConfigURL(index, &configURL);
 	if(getRet)
 	{
@@ -360,7 +368,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 	{
 		WebConfigLog("webConfig is in sync with cloud. response_code:%d\n", response_code);
 		setSyncCheckOK(index, TRUE);
-		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion);
+		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion, transaction_uuid);
 		return 1;
 	}
 	else if(response_code == 200)
@@ -403,7 +411,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 					WebConfigLog("Failed to set SyncCheckOK for index %d\n", index);
 				}
 
-				addWebConfigNotifyMsg(configURL, response_code, "success", setRet, RequestTimeStamp , newDocVersion);
+				addWebConfigNotifyMsg(configURL, response_code, "success", setRet, RequestTimeStamp , newDocVersion, transaction_uuid);
 				return 1;
 			}
 			else
@@ -425,7 +433,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 					WebConfigLog("Configuration settings from %s version %s FAILED\n", configURL, newDocVersion );
 					WebConfigLog("Sending Failure Notification after 3 retry attempts\n");
 					err =1;
-					addWebConfigNotifyMsg(configURL, response_code, "failed", setRet, RequestTimeStamp , newDocVersion);
+					addWebConfigNotifyMsg(configURL, response_code, "failed", setRet, RequestTimeStamp , newDocVersion, transaction_uuid);
 				}
 			}
 		}
@@ -437,7 +445,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 	else if(response_code == 204)
 	{
 		WebConfigLog("No configuration available for this device. response_code:%d\n", response_code);
-		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion);
+		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion, transaction_uuid);
 		return 1;
 	}
 	else if(response_code == 403)
@@ -456,7 +464,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 	if((response_code !=403) && (first_digit == 4)) //4xx
 	{
 		WebConfigLog("Action not supported. response_code:%d\n", response_code);
-		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion);
+		addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion, transaction_uuid);
 		return 1;
 	}
 	else //5xx & all other errors
@@ -465,7 +473,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 		if(retry_count == 3 && !err)
 		{
 			WebcfgDebug("Sending Notification after 3 retry attempts\n");
-			addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion);
+			addWebConfigNotifyMsg(configURL, response_code, NULL, 0, RequestTimeStamp , configVersion, transaction_uuid);
 		}
 	}
 }
@@ -478,7 +486,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 * @param[in] r_count Number of curl retries on ipv4 and ipv6 mode during failure
 * @return returns 0 if success, otherwise failed to fetch auth token and will be retried.
 */
-int requestWebConfigData(char **configData, int r_count, int index, int status, long *code)
+int requestWebConfigData(char **configData, int r_count, int index, int status, long *code, char **transaction_id)
 {
 	CURL *curl;
 	CURLcode res;
@@ -494,6 +502,7 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 	char *ct = NULL;
 	char *URL_param = NULL;
 	char *webConfigURL= NULL;
+	char *transID = NULL;
 	DATA_TYPE paramType;
 	int content_res=0;
 	struct token_data data;
@@ -514,7 +523,13 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 			return rv;
 		}
 		data.data[0] = '\0';
-		createCurlheader(list, &headers_list, status, index);
+		createCurlheader(list, &headers_list, status, index, &transID);
+		WebConfigLog("After createCurlheader\n");
+		WebConfigLog("transID after createCurlheader is %s\n", transID);
+		*transaction_id = strdup(transID);
+		WebConfigLog("*transaction_id copied is %s\n", *transaction_id);
+		WAL_FREE(transID);
+		WebConfigLog("freed transID\n");
 		
 		getConfigURL(index, &configURL);
 		WebConfigLog("configURL fetched is %s\n", configURL);
@@ -962,7 +977,7 @@ static void get_webCfg_interface(char **interface)
  * @param[in] device status value
  * @param[out] header_list output curl header list
 */
-void createCurlheader( struct curl_slist *list, struct curl_slist **header_list, int status, int index)
+void createCurlheader( struct curl_slist *list, struct curl_slist **header_list, int status, int index, char ** trans_uuid)
 {
 	char *version_header = NULL;
 	char *auth_header = NULL;
@@ -977,6 +992,7 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
 	char *uuid_header = NULL;
 	char *transaction_uuid = NULL;
 	char *version = NULL;
+	char* syncTransID = NULL;
 
 	WebConfigLog("Start of createCurlheader\n");
 	//Fetch auth JWT token from cloud.
@@ -1117,17 +1133,40 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
                 WebConfigLog("Failed to get systemReadyTime\n");
         }
 
-	transaction_uuid = generate_trans_uuid();
+	WebConfigLog("createCurlheader : getForceSync for index %d\n", index);
+	getForceSync(index,&syncTransID);
+	WebConfigLog("syncTransID is %s\n", syncTransID);
+	if((syncTransID !=NULL) && strlen(syncTransID)>0)
+	{
+		WebConfigLog("updating transaction_uuid with force syncTransID\n");
+		transaction_uuid = strdup(syncTransID);
+		WebConfigLog("free syncTransID\n");
+		WAL_FREE(syncTransID);
+		WebConfigLog("free syncTransID done\n");
+	}
+	else
+	{
+		WebConfigLog("generate_trans_uuid\n");
+		transaction_uuid = generate_trans_uuid();
+	}
+
+	WebConfigLog("transaction_uuid check\n");
 	if(transaction_uuid !=NULL)
 	{
+		WebConfigLog("transaction_uuid is %s\n", transaction_uuid);
 		uuid_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
 		if(uuid_header !=NULL)
 		{
 			snprintf(uuid_header, MAX_BUF_SIZE, "Transaction-ID: %s", transaction_uuid);
 			WebConfigLog("uuid_header formed %s\n", uuid_header);
 			list = curl_slist_append(list, uuid_header);
+			WebConfigLog("copying to *trans_uuid.\n");
+			*trans_uuid = strdup(transaction_uuid);
+			WebConfigLog("*trans_uuid is %s\n", *trans_uuid);
 			WAL_FREE(transaction_uuid);
+			WebConfigLog("freed transaction_uuid\n");
 			WAL_FREE(uuid_header);
+			WebConfigLog("freed uuid_header\n");
 		}
 	}
 	else
@@ -1282,7 +1321,7 @@ static void initWebConfigNotifyTask()
 
 }
 
-void addWebConfigNotifyMsg(char *url, long status_code, char *application_status, int application_details, char *request_timestamp, char *version)
+void addWebConfigNotifyMsg(char *url, long status_code, char *application_status, int application_details, char *request_timestamp, char *version, char *transaction_uuid)
 {
 	notify_params_t *args = NULL;
 	args = (notify_params_t *)malloc(sizeof(notify_params_t));
@@ -1310,7 +1349,14 @@ void addWebConfigNotifyMsg(char *url, long status_code, char *application_status
 		{
 			args->version = strdup(version);
 		}
-		WebcfgDebug("args->url:%s args->status_code:%d args->application_status:%s args->application_details:%d args->request_timestamp:%s args->version:%s\n", args->url, args->status_code, args->application_status, args->application_details, args->request_timestamp, args->version );
+		WebConfigLog("Inside addWebConfigNotifyMsg. transaction_uuid is %s\n", transaction_uuid);
+		if(transaction_uuid != NULL)
+		{
+			WebConfigLog("copying transaction_uuid %s to args\n", transaction_uuid);
+			args->transaction_uuid = strdup(transaction_uuid);
+			WebConfigLog("copied transaction_uuid to args\n");
+		}
+		WebConfigLog("args->url:%s args->status_code:%d args->application_status:%s args->application_details:%d args->request_timestamp:%s args->version:%s args->transaction_uui:%s\n", args->url, args->status_code, args->application_status, args->application_details, args->request_timestamp, args->version, args->transaction_uuid );
 
 		notifyMsg = args;
 
@@ -1370,6 +1416,9 @@ void* processWebConfigNotification()
                                                 }
 						cJSON_AddNumberToObject(one_report, "request_timestamp", (NULL != msg->request_timestamp) ? atoi(msg->request_timestamp) : 0);
 						cJSON_AddStringToObject(one_report,"version", (NULL != msg->version && (strlen(msg->version)!=0)) ? msg->version : "NONE");
+						WebConfigLog("Adding transaction_uuid to NotifyPayload\n");
+						cJSON_AddStringToObject(one_report,"transaction_uuid", (NULL != msg->transaction_uuid && (strlen(msg->transaction_uuid)!=0)) ? msg->transaction_uuid : "unknown");
+						WebConfigLog("Added transaction_uuid to NotifyPayload\n");
 					}
 					stringifiedNotifyPayload = cJSON_PrintUnformatted(notifyPayload);
 					cJSON_Delete(notifyPayload);
@@ -1426,6 +1475,13 @@ void free_notify_params_struct(notify_params_t *param)
         {
             WAL_FREE(param->version);
         }
+	WebConfigLog("free for transaction_uuid\n");
+	if(param->transaction_uuid != NULL)
+        {
+	    WebConfigLog("freeing param->transaction_uuid\n");
+	    WAL_FREE(param->transaction_uuid);
+        }
+	WebConfigLog("free for transaction_uuid done\n");
         WAL_FREE(param);
     }
 }
