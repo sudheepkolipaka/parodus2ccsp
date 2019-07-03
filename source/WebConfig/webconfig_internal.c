@@ -1356,7 +1356,7 @@ void addWebConfigNotifyMsg(char *url, long status_code, char *application_status
 			args->transaction_uuid = strdup(transaction_uuid);
 			WebConfigLog("copied transaction_uuid to args\n");
 		}
-		WebConfigLog("args->url:%s args->status_code:%d args->application_status:%s args->application_details:%d args->request_timestamp:%s args->version:%s args->transaction_uui:%s\n", args->url, args->status_code, args->application_status, args->application_details, args->request_timestamp, args->version, args->transaction_uuid );
+		WebConfigLog("args->url:%s args->status_code:%d args->application_status:%s args->application_details:%d args->request_timestamp:%s args->version:%s args->transaction_uuid:%s\n", args->url, args->status_code, args->application_status, args->application_details, args->request_timestamp, args->version, args->transaction_uuid );
 
 		notifyMsg = args;
 

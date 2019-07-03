@@ -571,13 +571,14 @@ BOOL setForceSyncWithWebConfigCtx(ANSC_HANDLE hInsContext, char *pValue)
 		//pConfigFileEntry->ForceSync = bValue;
 		WebConfigLog("copying pValue %s to pConfigFileEntry->ForceSync\n", pValue);
 		AnscCopyString(pConfigFileEntry->ForceSync, pValue);
-		WebConfigLog("pConfigFileEntry->ForceSync is %s\n", pConfigFileEntry->ForceSync);
-		if(pValue !=NULL && strlen(pValue>0))
+		WebConfigLog("pConfigFileEntry->ForceSync is ...%s...\n", pConfigFileEntry->ForceSync);
+		if(pValue !=NULL && (strlen(pValue)>0))
 		{
 			WebConfigLog("pValue is %s len %lu\n", pValue, strlen(pValue));
 			pthread_mutex_lock (get_global_periodicsync_mutex());
 			pthread_cond_signal(get_global_periodicsync_condition());
 			pthread_mutex_unlock(get_global_periodicsync_mutex());
+			WebConfigLog("After forcesync cond signal\n");
 		}
 		return TRUE;
 	}

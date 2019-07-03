@@ -538,7 +538,7 @@ ConfigFile_SetParamStringValue
         char*                       strValue
     )
 {
-	WebcfgDebug(" %s : ENTER \n", __FUNCTION__ );
+	WebConfigLog(" %s : ENTER \n", __FUNCTION__ );
 	RFC_ENABLE=Get_RfcEnable();
 	if(!RFC_ENABLE)
 	{
@@ -556,12 +556,14 @@ ConfigFile_SetParamStringValue
 	if( AnscEqualString(ParamName, "ForceSync", TRUE))
 	{
 		/* save update to backup */
+		WebConfigLog("ConfigFile_SetParamStringValue ForceSync\n");
 		if(setForceSyncWithWebConfigCtx(hInsContext, strValue))
 		{
+			WebConfigLog("ConfigFile_SetParamStringValue return TRUE\n");
 			return TRUE;
 		}
 	}
-	WebcfgDebug(" %s : EXIT \n", __FUNCTION__ );
+	WebConfigLog(" %s : EXIT \n", __FUNCTION__ );
 
 	return FALSE;
 }
