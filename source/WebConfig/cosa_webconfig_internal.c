@@ -790,18 +790,25 @@ int getWebConfigParameterValues(char **parameterNames, int paramCount, int *val_
                             }
                             else if(strcmp(restDmlString, CONFIGFILE_PARAM_FORCE_SYNC) == 0)
                             {
-                                if(isValidInstanceNumber(index))
-                                {
-                                    paramVal[k]->parameterName = strndup(parameterNames[i], MAX_PARAMETERNAME_LEN);
-                                    paramVal[k]->parameterValue = strndup("false",MAX_PARAMETERVALUE_LEN);
-                                    paramVal[k]->type = ccsp_boolean;
-                                    k++;
-                                }
-                                else
+				WebConfigLog("Webpa getForceSync call\n");
+				ret = getForceSync(index,&valueStr);
+								if(ret)
 								{
+									WebConfigLog("valueStr: %s\n",valueStr);
+									paramVal[k]->parameterName = strndup(parameterNames[i], MAX_PARAMETERNAME_LEN);
+									paramVal[k]->parameterValue = strndup(valueStr,MAX_PARAMETERVALUE_LEN);
+									paramVal[k]->type = ccsp_string;
+									k++;
+									WAL_FREE(valueStr);
+									WebConfigLog("After free getForceSync\n");
+								}
+								else
+								{
+								    WebConfigLog("getForceSync fail\n");
 								    WAL_FREE(paramVal[k]);
 									matchFound = 0;
 								}
+				WebConfigLog("Webpa getForceSync done\n");
                             }
                             else if(strcmp(restDmlString, CONFIGFILE_PARAM_SYNC_CHECK_OK) == 0)
                             {
