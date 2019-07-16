@@ -138,8 +138,10 @@ int prepareRollbackData(ParamCompList *ParamGroup, int paramCount, int compCount
 {
 	param_t **storeGetValue = NULL;
 	int i = 0, j = 0, ret = 0, index = 0, retCount = 0, cnt1 = 0;
+
 	storeGetValue = (param_t **)malloc(sizeof(param_t *) * paramCount);
 	memset(storeGetValue,0,(sizeof(param_t *) * paramCount));
+
 	(*rollbackVal) = (param_t **) malloc(sizeof(param_t *) * compCount);
 	memset((*rollbackVal),0,(sizeof(param_t *) * compCount));
 	WalInfo("------------ %s ---------- ENTER -----\n",__FUNCTION__);
@@ -174,7 +176,9 @@ int prepareRollbackData(ParamCompList *ParamGroup, int paramCount, int compCount
 		}
 		else
 		{
+			WalInfo("rollbackVal allocation\n");
 			(*rollbackVal)[i] = (param_t *) malloc(sizeof(param_t) * ParamGroup[i].parameterCount);
+			WalInfo("retCount is %d\n", retCount);
 			for(j = 0; j < retCount ; j++)
 			{
 				WalInfo("Start of for loop of storeGetValue\n");
@@ -185,17 +189,21 @@ int prepareRollbackData(ParamCompList *ParamGroup, int paramCount, int compCount
 				(*rollbackVal)[i][j].type=storeGetValue[index]->type;
 
 				WalInfo("(*rollbackVal)[%d][%d].name : %s, (*rollbackVal)[%d][%d].value : %s, (*rollbackVal)[%d][%d].type : %d\n",i,j,(*rollbackVal)[i][j].name,i,j,(*rollbackVal)[i][j].value,i,j,(*rollbackVal)[i][j].type);
-				WAL_FREE(storeGetValue[cnt1]->name);
-				WalInfo("B4 storeGetValue[cnt1]->value\n");
-				WAL_FREE(storeGetValue[cnt1]->value);
-				WalInfo("B4 storeGetValue[cnt1]\n");
-				WAL_FREE(storeGetValue[cnt1]);
-				WalInfo("After storeGetValue[cnt1]\n");
+				WalInfo("free for storeGetValue\n");
+				WAL_FREE(storeGetValue[index]->name);
+				WalInfo("B4 storeGetValue[index]->value\n");
+				WAL_FREE(storeGetValue[index]->value);
+				WalInfo("B4 storeGetValue[index]\n");
+				WAL_FREE(storeGetValue[index]);
+				WalInfo("After storeGetValue[index]\n");
 				index++;
 				WalInfo("index incremented: %d\n", index);
 			}
+			WalInfo("outside for of storeGetValue\n");
 		}
+		WalInfo("outside of main for\n");
 	}
+	WalInfo("free for storeGetValue\n");
 	WAL_FREE(storeGetValue);
 	WalInfo("--------- End of SET Atomic caching -------\n");
 	WalInfo("------------ %s ---------- EXIT -----\n",__FUNCTION__);
