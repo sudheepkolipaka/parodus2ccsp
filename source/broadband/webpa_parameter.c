@@ -134,240 +134,238 @@ void getValues(const char *paramName[], const unsigned int paramCount, int index
     free_ParamCompList(ParamGroup, compCount);		
 }
 
-void setValues(const param_t paramVal[], const unsigned int paramCount, const WEBPA_SET_TYPE setType,char *transactionId, money_trace_spans *timeSpan, WDMP_STATUS *retStatus, int *ccspRetStatus)
+int prepareRollbackData(ParamCompList *ParamGroup, int paramCount, int compCount, money_trace_spans *timeSpan, param_t ***rollbackVal)
 {
-        int cnt = 0, ret = 0, cnt1 =0, i = 0, count = 0, error = 0, compCount = 0, cnt2= 0, j = 0;
-        int index = 0,retCount = 0,checkSetstatus = 0,rev=0,indexWifi= -1,getFlag=0;
-        char parameterName[MAX_PARAMETERNAME_LEN] = {'\0'};
-        ParamCompList *ParamGroup = NULL;
-        char **compName = NULL;
-        char **dbusPath = NULL;
-        param_t **val = NULL;
-        param_t **rollbackVal = NULL;
-        param_t **storeGetValue = NULL;// To store param values before failure occurs
+	param_t **storeGetValue = NULL;
+	int i = 0, j = 0, ret = 0, index = 0, retCount = 0, cnt1 = 0;
+	storeGetValue = (param_t **)malloc(sizeof(param_t *) * paramCount);
+	memset(storeGetValue,0,(sizeof(param_t *) * paramCount));
+	(*rollbackVal) = (param_t **) malloc(sizeof(param_t *) * compCount);
+	memset((*rollbackVal),0,(sizeof(param_t *) * compCount));
+	WalInfo("------------ %s ---------- ENTER -----\n",__FUNCTION__);
+	for(j = 0; j < compCount ;j++)
+	{
+		WalInfo("ParamGroup[%d].comp_name :%s, ParamGroup[%d].dbus_path :%s, ParamGroup[%d].parameterCount :%d\n",j,ParamGroup[j].comp_name, j,ParamGroup[j].dbus_path, j,ParamGroup[j].parameterCount);
+	}
+	WalInfo("--------- Start of SET Atomic caching -------\n");
+	for (i = 0; i < compCount; i++)
+	{
+		if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME) && applySettingsFlag == TRUE)
+		{
+			WalError("WiFi component is busy\n");
+			WAL_FREE(storeGetValue);
+			WAL_FREE(rollbackVal);
+			return CCSP_ERR_WIFI_BUSY;
+		}
 
-        WalPrint("=============== Start of setValues =============\n");
-        for(cnt1 = 0; cnt1 < paramCount; cnt1++)
-        {
-                walStrncpy(parameterName,paramVal[cnt1].name,sizeof(parameterName));
-                // To get list of component name and dbuspath
-                ret = getComponentDetails(parameterName,&compName,&dbusPath,&error,&count);
-                if(error == 1)
-                {
-                        break;
-                }
-                WalPrint("parameterName: %s count: %d\n",parameterName,count);
-                for(i = 0; i < count; i++)
-                {
-                        WalPrint("compName[%d] : %s, dbusPath[%d] : %s\n", i,compName[i],i, dbusPath[i]);
-                        prepareParamGroups(&ParamGroup,paramCount,cnt1,parameterName,compName[i],dbusPath[i],&compCount);
-                }
-                free_componentDetails(compName,dbusPath,count);
-        }
+		WalInfo("B4 getParamValues index = %d\n", index);
+		//GET values for rollback purpose
+		ret = getParamValues(ParamGroup[i].parameterName, ParamGroup[i].parameterCount, ParamGroup[i].comp_name, ParamGroup[i].dbus_path, timeSpan, index, 0, &storeGetValue,&retCount);
+		WalInfo("After getParamValues index = %d , retCount =  %d\n",index,retCount);
+		if(ret != CCSP_SUCCESS)
+		{
+			WalError("Get Atomic Values call failed for ParamGroup[%d]->comp_name :%s ret: %d\n",i,ParamGroup[i].comp_name,ret);
+			for(cnt1=index-1;cnt1>=0;cnt1--)
+			{
+				WAL_FREE(storeGetValue[cnt1]->name);
+				WAL_FREE(storeGetValue[cnt1]->value);
+				WAL_FREE(storeGetValue[cnt1]);
+			}
+		}
+		else
+		{
+			(*rollbackVal)[i] = (param_t *) malloc(sizeof(param_t) * ParamGroup[i].parameterCount);
+			for(j = 0; j < retCount ; j++)
+			{
+				WalInfo("Start of for loop of storeGetValue\n");
+				WalInfo("storeGetValue[%d]->name : %s, storeGetValue[%d]->value : %s, storeGetValue[%d]->type : %d\n",index,storeGetValue[index]->name,index,storeGetValue[index]->value,index,storeGetValue[index]->type);
+				WalInfo("Assigning to rollbackVal\n");
+				(*rollbackVal)[i][j].name=strdup(storeGetValue[index]->name);
+				(*rollbackVal)[i][j].value=strdup(storeGetValue[index]->value);
+				(*rollbackVal)[i][j].type=storeGetValue[index]->type;
 
-        if(error != 1)
-        {
-                WalPrint("Number of parameter groups : %d\n",compCount);
-
-                val = (param_t **) malloc(sizeof(param_t *) * compCount);
-                memset(val,0,(sizeof(param_t *) * compCount));
-
-                rollbackVal = (param_t **) malloc(sizeof(param_t *) * compCount);
-                memset(rollbackVal,0,(sizeof(param_t *) * compCount));
-
-                storeGetValue = (param_t **)malloc(sizeof(param_t *) * paramCount);
-                memset(storeGetValue,0,(sizeof(param_t *) * paramCount));
-                
-                for(j = 0; j < compCount ;j++)
-                {
-                        WalPrint("ParamGroup[%d].comp_name :%s, ParamGroup[%d].dbus_path :%s, ParamGroup[%d].parameterCount :%d\n",j,ParamGroup[j].comp_name, j,ParamGroup[j].dbus_path, j,ParamGroup[j].parameterCount);
-
-                        val[j] = (param_t *) malloc(sizeof(param_t) * ParamGroup[j].parameterCount);
-                        rollbackVal[j] = (param_t *) malloc(sizeof(param_t) * ParamGroup[j].parameterCount);
-                }
-
-                WalPrint("--------- Start of SET Atomic caching -------\n");
-                for (i = 0; i < compCount; i++)
-                {
-                        if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME) && applySettingsFlag == TRUE)
-                        {
-                                ret = CCSP_ERR_WIFI_BUSY;
-                                WalError("WiFi component is busy\n");
-                                getFlag = 1;
-                                break;
-                        }
-                        
-                        WalPrint("B4 getParamValues index = %d\n", index);
-                        //GET values for rollback purpose
-                        ret = getParamValues(ParamGroup[i].parameterName, ParamGroup[i].parameterCount, ParamGroup[i].comp_name, ParamGroup[i].dbus_path, timeSpan, index, 0, &storeGetValue,&retCount);
-		  	WalPrint("After getParamValues index = %d , retCount =  %d\n",index,retCount);
-                        if(ret != CCSP_SUCCESS)
-                        {
-                                WalError("Get Atomic Values call failed for ParamGroup[%d]->comp_name :%s ret: %d\n",i,ParamGroup[i].comp_name,ret);
-                                getFlag = 1;
-
-                                for(cnt1=index-1;cnt1>=0;cnt1--)
-                                {
-                                        WAL_FREE(storeGetValue[cnt1]->name);
-                                        WAL_FREE(storeGetValue[cnt1]->value);
-                                        WAL_FREE(storeGetValue[cnt1]);
-                                }
-                                break;
-                        }
-                        else
-                        {		 
-                                for(j = 0; j < retCount ; j++)
-                                {
-                                        WalPrint("storeGetValue[%d]->name : %s, storeGetValue[%d]->value : %s, storeGetValue[%d]->type : %d\n",index,storeGetValue[index]->name,index,storeGetValue[index]->value,index,storeGetValue[index]->type);
-
-                                        rollbackVal[i][j].name=storeGetValue[index]->name;
-                                        rollbackVal[i][j].value=storeGetValue[index]->value;
-                                        rollbackVal[i][j].type=storeGetValue[index]->type;
-
-                                        WalPrint("rollbackVal[%d][%d].name : %s, rollbackVal[%d][%d].value : %s, rollbackVal[%d][%d].type : %d\n",i,j,rollbackVal[i][j].name,i,j,rollbackVal[i][j].value,i,j,rollbackVal[i][j].type);
-                                        index++;
-                                }		  	    		  	    		  	    
-                        }
-                }
-                WalPrint("--------- End of SET Atomic caching -------\n");
-                if(getFlag !=1)
-                {		    
-                        WalPrint("---- Start of preparing val struct ------\n");
-                        for(cnt1 = 0; cnt1 < paramCount; cnt1++)
-                        {
-                                for(j = 0; j < compCount ;j++)
-                                {
-                                        for(cnt2 = 0; cnt2 < ParamGroup[j].parameterCount; cnt2++)
-                                        {
-                                                WalPrint("ParamGroup[%d].parameterName[%d] :%s\n",j,cnt2,ParamGroup[j].parameterName[cnt2]);
-                                                WalPrint("paramVal[%d].name : %s\n",cnt1,paramVal[cnt1].name);
-                                                if(strcmp(paramVal[cnt1].name,ParamGroup[j].parameterName[cnt2]) == 0)
-                                                {
-                                                        WalPrint("paramVal[%d].name : %s \n",cnt1,paramVal[cnt1].name);
-                                                        val[j][cnt2].name = paramVal[cnt1].name;
-                                                        WalPrint("val[%d][%d].name : %s \n",j,cnt2,val[j][cnt2].name);
-                                                        WalPrint("paramVal[%d].value : %s\n",cnt1,paramVal[cnt1].value);
-                                                        val[j][cnt2].value = paramVal[cnt1].value;
-                                                        WalPrint("val[%d][%d].value : %s \n",j,cnt2,val[j][cnt2].value);
-                                                        val[j][cnt2].type = paramVal[cnt1].type;
-                                                }
-                                        }
-                                }
-                        }//End of for loop
-                        WalPrint("---- End of preparing val struct ------\n");
-
-                        for (i = 0; i < compCount; i++)
-                        {
-                                if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME) && applySettingsFlag == TRUE)
-                                {
-                                        ret = CCSP_ERR_WIFI_BUSY;
-                                        WalError("WiFi component is busy\n");
-                                        break;
-                                }			
-
-                                // Skip and do SET for Wifi component at the end 
-                                if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME))
-                                {
-                                        WalPrint("skip wifi set and get the index %d\n",i);
-                                        indexWifi = i;
-                                }
-                                else
-                                {
-                                        WalPrint("ParamGroup[%d].comp_name : %s\n",i,ParamGroup[i].comp_name);
-                                        ret = setParamValues(val[i], ParamGroup[i].comp_name,ParamGroup[i].dbus_path,ParamGroup[i].parameterCount, setType, transactionId);
-                                        WalPrint("ret : %d\n",ret);
-                                        if(ret != CCSP_SUCCESS)
-                                        {
-                                                WalError("Failed to do atomic set hence rollbacking the changes. ret :%d\n",ret);
-                                                WalPrint("------ Start of rollback ------\n");
-                                                // Rollback data in failure case
-                                                for(rev =i-1;rev>=0;rev--)
-                                                {
-                                                        WalPrint("rev value inside for loop is  %d\n",rev);
-                                                        //skip for wifi rollback
-                                                        if(indexWifi != rev)
-                                                        {
-                                                                WalPrint("ParamGroup[%d].comp_name : %s\n",rev,ParamGroup[rev].comp_name);
-                                                                checkSetstatus = setParamValues(rollbackVal[rev],ParamGroup[rev].comp_name,ParamGroup[rev].dbus_path, ParamGroup[rev].parameterCount, setType, transactionId);
-                                                                WalPrint("checkSetstatus is : %d\n",checkSetstatus);
-                                                                if(checkSetstatus != CCSP_SUCCESS)
-                                                                {
-                                                                        WalError("While rollback Failed to do atomic set. checkSetstatus :%d\n",checkSetstatus);
-                                                                }
-                                                        }
-                                                        else
-                                                        {
-                                                                WalPrint("Skip rollback for WiFi\n");
-                                                                indexWifi = -1;
-                                                        }
-                                                }
-                                                WalPrint("------ End of rollback ------\n");				
-                                                break;
-                                        }
-                                }
-                        }
-                        //Got wifi index and do SET
-                        if(indexWifi !=-1)
-                        {
-                                WalPrint("Wifi SET at end\n");
-                                WalPrint("ParamGroup[%d].comp_name : %s\n",indexWifi,ParamGroup[indexWifi].comp_name);
-                                ret = setParamValues(val[indexWifi], ParamGroup[indexWifi].comp_name,ParamGroup[indexWifi].dbus_path, ParamGroup[indexWifi].parameterCount, setType, transactionId);
-                                if(ret != CCSP_SUCCESS)
-                                {
-                                        WalError("Failed atomic set for WIFI hence rollbacking the changes. ret :%d and i is %d\n",ret,i);
-
-                                        // Rollback data in failure case
-                                        for(rev =i-1;rev>=0;rev--)
-                                        {
-                                                WalPrint("rev value inside for loop is  %d\n",rev);
-                                                //skip for wifi rollback
-                                                if(indexWifi != rev)
-                                                {
-                                                        WalPrint("ParamGroup[%d].comp_name : %s\n",rev,ParamGroup[rev].comp_name);
-                                                        checkSetstatus = setParamValues(rollbackVal[rev], ParamGroup[rev].comp_name,ParamGroup[rev].dbus_path, ParamGroup[rev].parameterCount, setType, transactionId);	
-                                                        WalPrint("checkSetstatus is: %d\n",checkSetstatus);
-                                                        if(checkSetstatus != CCSP_SUCCESS)
-                                                        {
-                                                                WalError("While rollback Failed to do atomic set. checkSetstatus :%d\n",checkSetstatus);
-                                                        }
-                                                }
-                                                else
-                                                {
-                                                        WalPrint("Skip rollback for WiFi\n");
-                                                }	
-
-                                        }
-                                        WalPrint("------ End of rollback ------\n");
-                                }
-                        }
-
-                        for(i=0;i<paramCount;i++)
-                        {
-                                WAL_FREE(storeGetValue[i]->name);
-                                WAL_FREE(storeGetValue[i]->value);
-                                WAL_FREE(storeGetValue[i]);
-                        }
-                }
-
-                free_paramVal_memory(val,compCount);
-                free_paramVal_memory(rollbackVal,compCount);
-                WAL_FREE(storeGetValue);
-        }
-        else
-        {
-                WalError("Failed to get Component details\n");
-        }
-
-        WalPrint("------ Free for ParamGroup ------\n");
-        free_ParamCompList(ParamGroup, compCount);
-        
-	*ccspRetStatus = ret;
-	WalInfo("ccspRetStatus is %d\n", *ccspRetStatus);
-        *retStatus = mapStatus(ret);
-
-        WalPrint("=============== End of setValues =============\n");
+				WalInfo("(*rollbackVal)[%d][%d].name : %s, (*rollbackVal)[%d][%d].value : %s, (*rollbackVal)[%d][%d].type : %d\n",i,j,(*rollbackVal)[i][j].name,i,j,(*rollbackVal)[i][j].value,i,j,(*rollbackVal)[i][j].type);
+				WAL_FREE(storeGetValue[cnt1]->name);
+				WalInfo("B4 storeGetValue[cnt1]->value\n");
+				WAL_FREE(storeGetValue[cnt1]->value);
+				WalInfo("B4 storeGetValue[cnt1]\n");
+				WAL_FREE(storeGetValue[cnt1]);
+				WalInfo("After storeGetValue[cnt1]\n");
+				index++;
+				WalInfo("index incremented: %d\n", index);
+			}
+		}
+	}
+	WAL_FREE(storeGetValue);
+	WalInfo("--------- End of SET Atomic caching -------\n");
+	WalInfo("------------ %s ---------- EXIT -----\n",__FUNCTION__);
+	return ret;
 }
 
+void setValues(const param_t paramVal[], const unsigned int paramCount, const WEBPA_SET_TYPE setType,char *transactionId, money_trace_spans *timeSpan, WDMP_STATUS *retStatus, int *ccspRetStatus)
+{
+	int cnt = 0, ret = 0, cnt1 =0, i = 0, count = 0, error = 0, compCount = 0, cnt2= 0, j = 0;
+	int index = 0,retCount = 0,checkSetstatus = 0,rev=0,indexWifi= -1,getFlag=0;
+	char parameterName[MAX_PARAMETERNAME_LEN] = {'\0'};
+	ParamCompList *ParamGroup = NULL;
+	char **compName = NULL;
+	char **dbusPath = NULL;
+	param_t **val = NULL;
+	param_t **rollbackVal = NULL;
+
+	WalInfo("=============== Start of setValues =============\n");
+	for(cnt1 = 0; cnt1 < paramCount; cnt1++)
+	{
+		walStrncpy(parameterName,paramVal[cnt1].name,sizeof(parameterName));
+		// To get list of component name and dbuspath
+		ret = getComponentDetails(parameterName,&compName,&dbusPath,&error,&count);
+		if(error == 1)
+		{
+			break;
+		}
+		WalInfo("parameterName: %s count: %d\n",parameterName,count);
+		for(i = 0; i < count; i++)
+		{
+			WalInfo("compName[%d] : %s, dbusPath[%d] : %s\n", i,compName[i],i, dbusPath[i]);
+			prepareParamGroups(&ParamGroup,paramCount,cnt1,parameterName,compName[i],dbusPath[i],&compCount);
+		}
+		free_componentDetails(compName,dbusPath,count);
+	}
+
+	if(error != 1)
+	{
+		WalInfo("Number of parameter groups : %d\n",compCount);
+		val = (param_t **) malloc(sizeof(param_t *) * compCount);
+		memset(val,0,(sizeof(param_t *) * compCount));
+		ret = prepareRollbackData(ParamGroup, paramCount, compCount, timeSpan, &rollbackVal);
+		if(ret == CCSP_SUCCESS)
+		{
+			WalInfo("---- Start of preparing val struct ------\n");
+			for(j = 0; j < compCount ;j++)
+			{
+				val[j] = (param_t *) malloc(sizeof(param_t)* ParamGroup[j].parameterCount);
+			}
+			for(cnt1 = 0; cnt1 < paramCount; cnt1++)
+			{
+				for(j = 0; j < compCount ;j++)
+				{
+					for(cnt2 = 0; cnt2 < ParamGroup[j].parameterCount; cnt2++)
+					{
+						WalInfo("ParamGroup[%d].parameterName[%d] :%s\n",j,cnt2,ParamGroup[j].parameterName[cnt2]);
+						WalInfo("paramVal[%d].name : %s\n",cnt1,paramVal[cnt1].name);
+						if(strcmp(paramVal[cnt1].name,ParamGroup[j].parameterName[cnt2]) == 0)
+						{
+							WalInfo("paramVal[%d].name : %s \n",cnt1,paramVal[cnt1].name);
+							val[j][cnt2].name = paramVal[cnt1].name;
+							WalInfo("val[%d][%d].name : %s \n",j,cnt2,val[j][cnt2].name);
+							WalInfo("paramVal[%d].value : %s\n",cnt1,paramVal[cnt1].value);
+							val[j][cnt2].value = paramVal[cnt1].value;
+							WalInfo("val[%d][%d].value : %s \n",j,cnt2,val[j][cnt2].value);
+							val[j][cnt2].type = paramVal[cnt1].type;
+						}
+					}
+				}
+			}//End of for loop
+			WalInfo("---- End of preparing val struct ------\n");
+
+			for (i = 0; i < compCount; i++)
+			{
+				if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME) && applySettingsFlag == TRUE)
+				{
+					ret = CCSP_ERR_WIFI_BUSY;
+					WalError("WiFi component is busy\n");
+					break;
+				}
+
+				// Skip and do SET for Wifi component at the end
+				if(!strcmp(ParamGroup[i].comp_name,RDKB_WIFI_FULL_COMPONENT_NAME))
+				{
+					WalInfo("skip wifi set and get the index %d\n",i);
+					indexWifi = i;
+				}
+				else
+				{
+					WalInfo("ParamGroup[%d].comp_name : %s\n",i,ParamGroup[i].comp_name);
+					ret = setParamValues(val[i], ParamGroup[i].comp_name,ParamGroup[i].dbus_path,ParamGroup[i].parameterCount, setType, transactionId);
+					WalInfo("ret : %d\n",ret);
+					if(ret != CCSP_SUCCESS)
+					{
+						WalError("Failed to do atomic set hence rollbacking the changes. ret :%d\n",ret);
+						WalInfo("------ Start of rollback ------\n");
+						// Rollback data in failure case
+						for(rev =i-1;rev>=0;rev--)
+						{
+							WalInfo("rev value inside for loop is  %d\n",rev);
+							//skip for wifi rollback
+							if(indexWifi != rev)
+							{
+								WalInfo("ParamGroup[%d].comp_name : %s\n",rev,ParamGroup[rev].comp_name);
+								checkSetstatus = setParamValues(rollbackVal[rev],ParamGroup[rev].comp_name,ParamGroup[rev].dbus_path, ParamGroup[rev].parameterCount, setType, transactionId);
+								WalInfo("checkSetstatus is : %d\n",checkSetstatus);
+								if(checkSetstatus != CCSP_SUCCESS)
+								{
+									WalError("While rollback Failed to do atomic set. checkSetstatus :%d\n",checkSetstatus);
+								}
+							}
+							else
+							{
+								WalInfo("Skip rollback for WiFi\n");
+								indexWifi = -1;
+							}
+						}
+						WalInfo("------ End of rollback ------\n");
+						break;
+					}
+				}
+			}
+			//Got wifi index and do SET
+			if(indexWifi !=-1)
+			{
+				WalInfo("Wifi SET at end\n");
+				WalInfo("ParamGroup[%d].comp_name : %s\n",indexWifi,ParamGroup[indexWifi].comp_name);
+				ret = setParamValues(val[indexWifi], ParamGroup[indexWifi].comp_name,ParamGroup[indexWifi].dbus_path, ParamGroup[indexWifi].parameterCount, setType, transactionId);
+				if(ret != CCSP_SUCCESS)
+				{
+					WalError("Failed atomic set for WIFI hence rollbacking the changes. ret :%d and i is %d\n",ret,i);
+					// Rollback data in failure case
+					for(rev =i-1;rev>=0;rev--)
+					{
+						WalInfo("rev value inside for loop is  %d\n",rev);
+						//skip for wifi rollback
+						if(indexWifi != rev)
+						{
+							WalInfo("ParamGroup[%d].comp_name : %s\n",rev,ParamGroup[rev].comp_name);
+							checkSetstatus = setParamValues(rollbackVal[rev], ParamGroup[rev].comp_name,ParamGroup[rev].dbus_path, ParamGroup[rev].parameterCount, setType, transactionId);
+							WalInfo("checkSetstatus is: %d\n",checkSetstatus);
+							if(checkSetstatus != CCSP_SUCCESS)
+							{
+								WalError("While rollback Failed to do atomic set. checkSetstatus :%d\n",checkSetstatus);
+							}
+						}
+						else
+						{
+							WalInfo("Skip rollback for WiFi\n");
+						}
+					}
+					WalInfo("------ End of rollback ------\n");
+				}
+			}
+		}
+		free_paramVal_memory(val,compCount);
+		free_paramVal_memory(rollbackVal,compCount);
+	}
+	else
+	{
+		WalError("Failed to get Component details\n");
+	}
+	WalInfo("------ Free for ParamGroup ------\n");
+	free_ParamCompList(ParamGroup, compCount);
+
+	*ccspRetStatus = ret;
+	WalInfo("ccspRetStatus is %d\n", *ccspRetStatus);
+	*retStatus = mapStatus(ret);
+	WalInfo("=============== End of setValues =============\n");
+}
 
 void initApplyWiFiSettings()
 {
