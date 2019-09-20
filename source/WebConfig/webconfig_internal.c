@@ -215,13 +215,19 @@ static void *WebConfigTask(void *status)
 				WebcfgDebug("getForceSyncCheck for index %d\n", index);
 				getForceSyncCheck(index,&ForceSyncEnable, &ForceSyncTransID);
 				WebcfgDebug("ForceSyncEnable is %d\n", ForceSyncEnable);
-				if(ForceSyncEnable)
+				if(ForceSyncTransID !=NULL)
 				{
-					wait_flag=0;
-					forced_sync = 1;
-					syncIndex = index;
-					WebConfigLog("Received signal interrupt to getForceSyncCheck at %s\n",ctime(&t));
-					break;
+					if(ForceSyncEnable)
+					{
+						wait_flag=0;
+						forced_sync = 1;
+						syncIndex = index;
+						WebConfigLog("Received signal interrupt to getForceSyncCheck at %s\n",ctime(&t));
+						WAL_FREE(ForceSyncTransID);
+						break;
+					}
+					WebConfigLog("ForceSyncEnable is false\n");
+					WAL_FREE(ForceSyncTransID);
 				}
 			}
 			WebConfigLog("forced_sync is %d\n", forced_sync);
@@ -477,6 +483,7 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 		WAL_FREE(RequestTimeStamp);
 		WAL_FREE(transaction_uuid);
 	}
+	return 0;
 }
 
 
@@ -756,6 +763,11 @@ int processJsonDocument(char *jsonData, int *retStatus, char **docVersion)
 	}
 	if(parseStatus ==1)
 	{
+		if(NULL == reqObj)
+		{
+			WebConfigLog("parseJsonData failed. reqObj is empty\n");
+			return rv;
+		}
 		WebConfigLog("Request:> Type : %d\n",reqObj->reqType);
 		WebConfigLog("Request:> ParamCount = %zu\n",reqObj->u.setReq->paramCnt);
 		paramCount = (int)reqObj->u.setReq->paramCnt;
@@ -854,17 +866,20 @@ int parseJsonData(char* jsonData, req_struct **req_obj, char **version)
 				return rv;
 			}
 			(reqObj) = (req_struct *) malloc(sizeof(req_struct));
-                	memset((reqObj), 0, sizeof(req_struct));
-
-			parse_set_request(json, &reqObj, WDMP_TR181);
-			if(reqObj != NULL)
-        		{
-				*req_obj = reqObj;	
-				rv = 1;		
-			}
-			else
+			if(reqObj !=NULL)
 			{
-				WebConfigLog("Failed to parse set request\n");
+                		memset((reqObj), 0, sizeof(req_struct));
+
+				parse_set_request(json, &reqObj, WDMP_TR181);
+				if(reqObj != NULL)
+				{
+					*req_obj = reqObj;	
+					rv = 1;		
+				}
+				else
+				{
+					WebConfigLog("Failed to parse set request\n");
+				}
 			}
 		}
 	}
@@ -891,8 +906,7 @@ int validateConfigFormat(cJSON *json, char **eTag)
 			if(jsonversion !=NULL)
 			{
 				//version & eTag header validation
-				WebcfgDebug("g_ETAG is %s len:%lu\n", g_ETAG, strlen(g_ETAG));
-				if( g_ETAG !=NULL )
+				if(strlen(g_ETAG)>0)
 				{
 					WebcfgDebug("jsonversion :%s len %lu\n", jsonversion, strlen(jsonversion));
 					if(strncmp(jsonversion, g_ETAG, strlen(g_ETAG)) == 0)
@@ -1148,10 +1162,13 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
         }
 
 	getForceSyncCheck(index,&ForceSyncEnable, &syncTransID);
-	if(ForceSyncEnable && ((syncTransID !=NULL) && strlen(syncTransID)>0))
+	if(syncTransID !=NULL)
 	{
-		WebConfigLog("updating transaction_uuid with force syncTransID\n");
-		transaction_uuid = strdup(syncTransID);
+		if(ForceSyncEnable && strlen(syncTransID)>0)
+		{
+			WebConfigLog("updating transaction_uuid with force syncTransID\n");
+			transaction_uuid = strdup(syncTransID);
+		}
 		WAL_FREE(syncTransID);
 	}
 	else
@@ -1271,7 +1288,7 @@ void getAuthToken()
 		                }
 			}
 
-			if( serialNum != NULL && strlen(serialNum)>0 )
+			if( strlen(serialNum)>0 )
 			{
 				execute_token_script(output, WEBPA_READ_HEADER, sizeof(output), get_global_deviceMAC(), serialNum);
 				if ((strlen(output) == 0))
@@ -1377,7 +1394,7 @@ void* processWebConfigNotification()
 {
 	char device_id[32] = { '\0' };
 	cJSON *notifyPayload = NULL;
-	char  * stringifiedNotifyPayload;
+	char  * stringifiedNotifyPayload = NULL;
 	notify_params_t *msg = NULL;
 	char dest[512] = {'\0'};
 	char *source = NULL;

@@ -193,7 +193,7 @@ CosaWebConfigInitialize
     else
 #endif
     CosaDmlGetValueFromDb("WebConfigRfcEnabled", tmpbuf);
-    if( tmpbuf != NULL && AnscEqualString(tmpbuf, "true", TRUE))
+    if( (tmpbuf[0] != '\0') && AnscEqualString(tmpbuf, "true", TRUE))
     {
         pMyObject->RfcEnable = true;
     }
@@ -206,7 +206,7 @@ CosaWebConfigInitialize
     //if(pMyObject->RfcEnable == true)
     {
         CosaDmlGetValueFromDb("PeriodicSyncCheckInterval", tmpbuf);
-        if(tmpbuf != NULL)
+        if(tmpbuf[0] != '\0')
         {
             pMyObject->PeriodicSyncCheckInterval = atoi(tmpbuf);
         }
@@ -341,7 +341,7 @@ CosaDmlGetConfigFile(
         pConfigFileContainer->pConfigFileTable = (PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)AnscAllocateMemory(sizeof(COSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)*(configFileCount));
         memset(pConfigFileContainer->pConfigFileTable, 0, sizeof(COSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)*(configFileCount));
 	CosaDmlGetValueFromDb("WebConfig_IndexesList", strInstance);
-        if(strInstance != NULL)
+        if(strInstance[0] != '\0')
         {
             WebcfgDebug("strInstance: %s\n",strInstance);
             char *tok = strtok(strInstance, ",");
@@ -547,27 +547,24 @@ void RemoveEntryFromIndexesList(ULONG InstanceNumber)
     if(strInstance[0] != '\0')
     {
         IndexsList = strdup(strInstance);
-        if(strInstance != NULL)
+        WebcfgDebug("strInstance: %s\n",strInstance);
+        char *tok = strtok_r(strInstance, ",",&st);
+        while(tok != NULL)
         {
-            WebcfgDebug("strInstance: %s\n",strInstance);
-            char *tok = strtok_r(strInstance, ",",&st);
-            while(tok != NULL)
+            index = atoi(tok);
+            if(index == InstanceNumber)
             {
-                index = atoi(tok);
-                if(index == InstanceNumber)
+                if(st[0] != '\0')
                 {
-                    if(st[0] != '\0')
-                    {
-                        appendToIndexesList(st, newList);
-                    }
-                    WebcfgDebug("Final newList: %s\n",newList);
-                    CosaDmlStoreValueIntoDb("WebConfig_IndexesList",newList);
-                    return;
+                    appendToIndexesList(st, newList);
                 }
-                appendToIndexesList(tok, newList);
-                WebcfgDebug("newList: %s\n",newList);
-                tok = strtok_r(NULL, ",",&st);
+                WebcfgDebug("Final newList: %s\n",newList);
+                CosaDmlStoreValueIntoDb("WebConfig_IndexesList",newList);
+                return;
             }
+            appendToIndexesList(tok, newList);
+            WebcfgDebug("newList: %s\n",newList);
+            tok = strtok_r(NULL, ",",&st);
         }
     }
     WebcfgDebug("-------%s------- EXIT ------\n",__FUNCTION__);

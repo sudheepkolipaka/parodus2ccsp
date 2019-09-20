@@ -255,6 +255,7 @@ ConfigFile_Synchronize
     ULONG                                 entryCount        = 0;
 	WebcfgDebug("------- %s ----- ENTER ----\n",__FUNCTION__);
 	WebcfgDebug("------- %s ----- EXIT ----\n",__FUNCTION__);
+    return 0;
 }
 
 ANSC_HANDLE
@@ -613,6 +614,7 @@ ConfigFile_Commit
      }    
     CosaDmlSetConfigFileEntry(pConfigFileEntry);
     WebcfgDebug(" %s : EXIT \n", __FUNCTION__ );
+    return 0;
 }
 
 ULONG
@@ -634,6 +636,7 @@ ConfigFile_Rollback
      }
     //TODO
     WebcfgDebug(" %s : EXIT \n", __FUNCTION__ );
+    return 0;
 }
 
 
