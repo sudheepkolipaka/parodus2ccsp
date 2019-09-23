@@ -269,6 +269,7 @@ ConfigFile_AddEntry
 	PCOSA_DATAMODEL_WEBCONFIG             pWebConfig              = (PCOSA_DATAMODEL_WEBCONFIG)g_pCosaBEManager->hWebConfig;
     PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY pConfigFileEntry = NULL;
     PCOSA_CONTEXT_WEBCONFIG_LINK_OBJECT   pWebConfigCxtLink  = NULL;
+    int configCount = 0;
     WebcfgDebug("------- %s ----- ENTER ----\n",__FUNCTION__);
     RFC_ENABLE=Get_RfcEnable();
     if(!RFC_ENABLE)
@@ -301,7 +302,7 @@ ConfigFile_AddEntry
     *pInsNumber = pWebConfigCxtLink->InstanceNumber;
     WebConfigLog("*pInsNumber: %d\n",*pInsNumber);
 	CosaSListPushEntryByInsNum(&pWebConfig->ConfigFileList, (PCOSA_CONTEXT_LINK_OBJECT)pWebConfigCxtLink);
-	int configCount = AnscSListQueryDepth( &pWebConfig->ConfigFileList );
+	configCount = AnscSListQueryDepth( &pWebConfig->ConfigFileList );
 	WebConfigLog("configCount: %d\n",configCount);
 	updateConfigFileNumberOfEntries(configCount);
 	updateConfigFileIndexsList(*pInsNumber);

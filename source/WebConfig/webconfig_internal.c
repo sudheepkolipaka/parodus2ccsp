@@ -705,12 +705,12 @@ size_t header_callback(char *buffer, size_t size, size_t nitems)
 				header_value = strtok(NULL, ":");
 				if(header_value !=NULL)
 				{
-					strncpy(header_str, header_value, sizeof(header_str));
+					strncpy(header_str, header_value, sizeof(header_str)-1);
 					WebcfgDebug("header_str is %s\n", header_str);
 					stripSpaces(header_str, &final_header);
 
 					WebcfgDebug("final_header is %s len %lu\n", final_header, strlen(final_header));
-					strncpy(g_ETAG, final_header, sizeof(g_ETAG));
+					strncpy(g_ETAG, final_header, sizeof(g_ETAG)-1);
 				}
 			}
 		}
@@ -1282,7 +1282,7 @@ void getAuthToken()
 				serial_number = getParameterValue(SERIAL_NUMBER);
 		                if(serial_number !=NULL)
 		                {
-					strncpy(serialNum ,serial_number, sizeof(serialNum));
+					strncpy(serialNum ,serial_number, sizeof(serialNum)-1);
 					WebConfigLog("serialNum: %s\n", serialNum);
 					WAL_FREE(serial_number);
 		                }

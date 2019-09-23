@@ -139,3 +139,9 @@ CosaDmlRemoveConfigFileEntry
 
 
 int initConfigFileWithURL(char *Url, ULONG InstanceNumber);
+
+void RemoveEntryFromIndexesList(ULONG InstanceNumber);
+void CosaDmlRemoveValueFromDb(char *ParamName);
+void CosaDmlStoreValueIntoDb(char *ParamName, char *pString);
+void CosaDmlGetValueFromDb( char* ParamName, char* pString );
+void FillEntryInList(PCOSA_DATAMODEL_WEBCONFIG pWebConfig, PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY configFileEntry);

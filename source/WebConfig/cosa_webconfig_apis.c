@@ -394,17 +394,17 @@ CosaDmlGetConfigFileEntry
     PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY pConfigFileEntry = (PCOSA_DML_WEBCONFIG_CONFIGFILE_ENTRY)AnscAllocateMemory(sizeof(COSA_DML_WEBCONFIG_CONFIGFILE_ENTRY));
     memset(pConfigFileEntry, 0, sizeof(COSA_DML_WEBCONFIG_CONFIGFILE_ENTRY));
     pConfigFileEntry->InstanceNumber = InstanceNumber;
-	sprintf(ParamName, "configfile_%d_Url", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_Url", InstanceNumber);
 	CosaDmlGetValueFromDb(ParamName, tmpbuf);
     WebcfgDebug("Url at %d:%s\n",InstanceNumber,tmpbuf);
 	AnscCopyString( pConfigFileEntry->URL, tmpbuf );
 
-	sprintf(ParamName, "configfile_%d_Version", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_Version", InstanceNumber);
 	CosaDmlGetValueFromDb(ParamName, tmpbuf);
     WebcfgDebug("Version at %d:%s\n",InstanceNumber,tmpbuf);
 	AnscCopyString( pConfigFileEntry->Version, tmpbuf );
 
-	sprintf(ParamName, "configfile_%d_SyncCheckOk", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_SyncCheckOk", InstanceNumber);
 	CosaDmlGetValueFromDb(ParamName, tmpbuf);
     WebcfgDebug("SyncCheckOK at %d:%s\n",InstanceNumber,tmpbuf);
     if(strcmp( tmpbuf, "true" ) == 0)
@@ -416,7 +416,7 @@ CosaDmlGetConfigFileEntry
         pConfigFileEntry->SyncCheckOK = false;
     }
 
-	sprintf(ParamName, "configfile_%d_RequestTimeStamp", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_RequestTimeStamp", InstanceNumber);
 	CosaDmlGetValueFromDb(ParamName, tmpbuf);
 	WebcfgDebug("RequestTimeStamp at %d:%s\n",InstanceNumber,tmpbuf);
 	AnscCopyString(pConfigFileEntry->RequestTimeStamp,tmpbuf);
@@ -434,7 +434,7 @@ CosaDmlSetConfigFileEntry
 	char ParamName[128] = { 0 };
 
 	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
-	sprintf(ParamName, "configfile_%d_Url", configFileEntry->InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_Url", configFileEntry->InstanceNumber);
 	if((configFileEntry->URL)[0] != '\0')
 	{
 		CosaDmlStoreValueIntoDb(ParamName, configFileEntry->URL);
@@ -444,7 +444,7 @@ CosaDmlSetConfigFileEntry
 		CosaDmlStoreValueIntoDb(ParamName, "");
 	}
 
-	sprintf(ParamName, "configfile_%d_Version", configFileEntry->InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_Version", configFileEntry->InstanceNumber);
 	if((configFileEntry->Version)[0] != '\0')
 	{
 		CosaDmlStoreValueIntoDb(ParamName, configFileEntry->Version);
@@ -454,7 +454,7 @@ CosaDmlSetConfigFileEntry
 		CosaDmlStoreValueIntoDb(ParamName, "");
 	}
 
-	sprintf(ParamName, "configfile_%d_SyncCheckOk", configFileEntry->InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_SyncCheckOk", configFileEntry->InstanceNumber);
 	if(configFileEntry->SyncCheckOK == true)
 	{
 		CosaDmlStoreValueIntoDb(ParamName, "true");
@@ -464,7 +464,7 @@ CosaDmlSetConfigFileEntry
 		CosaDmlStoreValueIntoDb(ParamName, "false");
 	}
 
-	sprintf(ParamName, "configfile_%d_RequestTimeStamp", configFileEntry->InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_RequestTimeStamp", configFileEntry->InstanceNumber);
 	if((configFileEntry->RequestTimeStamp)[0] != '\0')
 	{
 		CosaDmlStoreValueIntoDb(ParamName, configFileEntry->RequestTimeStamp);
@@ -503,16 +503,16 @@ CosaDmlRemoveConfigFileEntry
 {
 	char ParamName[128] = { 0 };
     WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
-    sprintf(ParamName, "configfile_%d_Url", InstanceNumber);
+    sprintf(ParamName, "configfile_%lu_Url", InstanceNumber);
 	CosaDmlRemoveValueFromDb(ParamName);
 
-	sprintf(ParamName, "configfile_%d_Version", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_Version", InstanceNumber);
 	CosaDmlRemoveValueFromDb(ParamName);
 
-	sprintf(ParamName, "configfile_%d_SyncCheckOk", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_SyncCheckOk", InstanceNumber);
 	CosaDmlRemoveValueFromDb(ParamName);
 
-	sprintf(ParamName, "configfile_%d_RequestTimeStamp", InstanceNumber);
+	sprintf(ParamName, "configfile_%lu_RequestTimeStamp", InstanceNumber);
 	CosaDmlRemoveValueFromDb(ParamName);
 	
     WebConfigLog("Remove %d from WebConfig_IndexesList\n",InstanceNumber);
@@ -620,7 +620,7 @@ void updateConfigFileNumberOfEntries(ULONG count)
 {
 	char buf[16] = { 0 };
 	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
-	sprintf(buf, "%d", count);
+	sprintf(buf, "%lu", count);
 	WebConfigLog("Updated count:%d\n",count);
 	CosaDmlStoreValueIntoDb("ConfigFileNumberOfEntries",buf);
 	WebcfgDebug("-------- %s ----- Exit ------\n",__FUNCTION__);
@@ -632,7 +632,7 @@ void updateConfigFileIndexsList(ULONG index)
 	char instance[16] = { 0 };
 	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
 	CosaDmlGetValueFromDb("WebConfig_IndexesList", strInstance);
-	sprintf(instance, "%d", index);
+	sprintf(instance, "%lu", index);
 	appendToIndexesList(instance, strInstance);
     WebConfigLog("Updated list: %s\n",strInstance);
     CosaDmlStoreValueIntoDb("WebConfig_IndexesList",strInstance);
@@ -643,7 +643,7 @@ void updateConfigFileNextInstanceNumber(ULONG index)
 {
     char buf[16] = { 0 };
 	WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
-	sprintf(buf, "%d", index);
+	sprintf(buf, "%lu", index);
 	WebConfigLog("Updated NextInstanceNumber:%d\n",index);
 	CosaDmlStoreValueIntoDb("WebConfig_NextInstanceNumber",buf);
 	WebcfgDebug("-------- %s ----- Exit ------\n",__FUNCTION__);
