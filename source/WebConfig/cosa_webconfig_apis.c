@@ -523,6 +523,7 @@ CosaDmlRemoveConfigFileEntry
 
 void appendToIndexesList(char *index, char *indexesList)
 {
+    char *indexesList_tmp = NULL;
     WebcfgDebug("-------- %s ----- Enter ------\n",__FUNCTION__);
     if(indexesList[0] == '\0')
     {
@@ -530,7 +531,12 @@ void appendToIndexesList(char *index, char *indexesList)
     }
     else
     {
-        sprintf(indexesList, "%s,%s",indexesList,index);
+	indexesList_tmp = strdup(indexesList);
+	WebConfigLog("indexesList_tmp is %s\n", indexesList_tmp);
+        sprintf(indexesList, "%s,%s",indexesList_tmp,index);
+	WebConfigLog("indexesList is %s\n", indexesList);
+	WAL_FREE(indexesList_tmp);
+	WebConfigLog("After indexesList free\n");
     }
     WebcfgDebug("-------- %s ----- Exit ------\n",__FUNCTION__);
 }
@@ -540,13 +546,11 @@ void RemoveEntryFromIndexesList(ULONG InstanceNumber)
     int index = 0;
     char* st;
     char newList[516]={};
-    char *IndexsList = NULL;
     char strInstance[516] = { 0 };
     WebcfgDebug("-------%s------- ENTER ------\n",__FUNCTION__);
     CosaDmlGetValueFromDb("WebConfig_IndexesList", strInstance);
     if(strInstance[0] != '\0')
     {
-        IndexsList = strdup(strInstance);
         WebcfgDebug("strInstance: %s\n",strInstance);
         char *tok = strtok_r(strInstance, ",",&st);
         while(tok != NULL)
@@ -682,7 +686,9 @@ static void loadInitURLFromFile(char **url)
 	if (NULL != fp)
 	{
 		char str[255] = {'\0'};
-		while(fscanf(fp,"%s", str) != EOF)
+		//while(fscanf(fp,"%s", str) != EOF)
+		WebConfigLog("loadInitURLFromFile. fetch using fgets\n");
+		while (fgets(str, sizeof(str), fp) != NULL)
 		{
 		    char *value = NULL;
 
@@ -690,6 +696,8 @@ static void loadInitURLFromFile(char **url)
 		    {
 			value = value + strlen("WEBCONFIG_INIT_URL=");
 			*url = strdup(value);
+			WebConfigLog("url fetched from device file is %s\n", *url);
+			break;
 		    }
 
 		}

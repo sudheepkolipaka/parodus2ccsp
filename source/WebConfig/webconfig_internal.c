@@ -558,7 +558,7 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 			get_webCfg_interface(&interface);
 			if(interface !=NULL)
 		        {
-		               strncpy(g_interface, interface, sizeof(g_interface));
+		               strncpy(g_interface, interface, sizeof(g_interface)-1);
 		               WebcfgDebug("g_interface copied is %s\n", g_interface);
 		               WAL_FREE(interface);
 		        }
@@ -967,7 +967,9 @@ static void get_webCfg_interface(char **interface)
 	if (NULL != fp)
 	{
 		char str[255] = {'\0'};
-		while(fscanf(fp,"%s", str) != EOF)
+		//while(fscanf(fp,"%s", str) != EOF)
+		WebConfigLog("get_webCfg_interface. fetch using fgets\n");
+		while (fgets(str, sizeof(str), fp) != NULL)
 		{
 		    char *value = NULL;
 
@@ -975,6 +977,8 @@ static void get_webCfg_interface(char **interface)
 		    {
 			value = value + strlen("WEBCONFIG_INTERFACE=");
 			*interface = strdup(value);
+			WebConfigLog("interface fetched from device file is %s\n", *interface);
+			break;
 		    }
 
 		}
@@ -1041,6 +1045,12 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
 		WebConfigLog("version_header formed %s\n", version_header);
 		list = curl_slist_append(list, version_header);
 		WAL_FREE(version_header);
+		if(version !=NULL)
+		{
+			WebConfigLog("createCurlheader : free version\n");
+			WAL_FREE(version);
+			WebConfigLog("createCurlheader : free version done\n");
+		}
 	}
 
 	schema_header = (char *) malloc(sizeof(char)*MAX_BUF_SIZE);
@@ -1057,7 +1067,7 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
 		bootTime = getParameterValue(DEVICE_BOOT_TIME);
 		if(bootTime !=NULL)
 		{
-		       strncpy(g_bootTime, bootTime, sizeof(g_bootTime));
+		       strncpy(g_bootTime, bootTime, sizeof(g_bootTime)-1);
 		       WebcfgDebug("g_bootTime fetched is %s\n", g_bootTime);
 		       WAL_FREE(bootTime);
 		}
@@ -1084,7 +1094,7 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
 		FwVersion = getParameterValue(FIRMWARE_VERSION);
 		if(FwVersion !=NULL)
 		{
-		       strncpy(g_FirmwareVersion, FwVersion, sizeof(g_FirmwareVersion));
+		       strncpy(g_FirmwareVersion, FwVersion, sizeof(g_FirmwareVersion)-1);
 		       WebcfgDebug("g_FirmwareVersion fetched is %s\n", g_FirmwareVersion);
 		       WAL_FREE(FwVersion);
 		}
@@ -1139,7 +1149,7 @@ void createCurlheader( struct curl_slist *list, struct curl_slist **header_list,
                 systemReadyTime = get_global_systemReadyTime();
                 if(systemReadyTime !=NULL)
                 {
-                       strncpy(g_systemReadyTime, systemReadyTime, sizeof(g_systemReadyTime));
+                       strncpy(g_systemReadyTime, systemReadyTime, sizeof(g_systemReadyTime)-1);
                        WebcfgDebug("g_systemReadyTime fetched is %s\n", g_systemReadyTime);
                        WAL_FREE(systemReadyTime);
                 }
@@ -1405,9 +1415,10 @@ void* processWebConfigNotification()
                 WebcfgDebug("processWebConfigNotification Inside while\n");
 		pthread_mutex_lock (&notify_mut);
 		WebcfgDebug("processWebConfigNotification mutex lock\n");
-		msg = notifyMsg;
+		msg = strdup(notifyMsg);
 		if(msg !=NULL)
 		{
+			pthread_mutex_unlock (&notify_mut);
                         WebcfgDebug("Processing msg\n");
 			if(strlen(get_global_deviceMAC()) == 0)
 			{
@@ -1457,10 +1468,11 @@ void* processWebConfigNotification()
 				if(msg != NULL)
 				{
 					free_notify_params_struct(msg);
+					msg = NULL;
 					notifyMsg = NULL;
 				}
 			}
-			pthread_mutex_unlock (&notify_mut);
+			//pthread_mutex_unlock (&notify_mut);
 			WebcfgDebug("processWebConfigNotification mutex unlock\n");
 		}
 		else
