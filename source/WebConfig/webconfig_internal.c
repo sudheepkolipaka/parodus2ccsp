@@ -486,7 +486,6 @@ int handleHttpResponse(long response_code, char *webConfigData, int retry_count,
 	return 0;
 }
 
-
 /*
 * @brief Initialize curl object with required options. create configData using libcurl.
 * @param[out] configData 
@@ -514,15 +513,16 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 	DATA_TYPE paramType;
 	int content_res=0;
 	struct token_data data;
-	data.size = 0;
 	char * configURL = NULL;
 	int ret =0, count = 0;
 	char *url = NULL;
 	char c[] = "{mac}";
+	void * dataVal = NULL;
 
 	curl = curl_easy_init();
 	if(curl)
 	{
+
 		//this memory will be dynamically grown by write call back fn as required
 		data.data = (char *) malloc(sizeof(char) * 1);
 		if(NULL == data.data)
@@ -569,10 +569,10 @@ int requestWebConfigData(char **configData, int r_count, int index, int status, 
 			WebcfgDebug("setting interface %s\n", g_interface);
 			curl_easy_setopt(curl, CURLOPT_INTERFACE, g_interface);
 		}
-
 		// set callback for writing received data
+		dataVal = &data;
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback_fn);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, dataVal);
 
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers_list);
 
@@ -1415,7 +1415,7 @@ void* processWebConfigNotification()
                 WebcfgDebug("processWebConfigNotification Inside while\n");
 		pthread_mutex_lock (&notify_mut);
 		WebcfgDebug("processWebConfigNotification mutex lock\n");
-		msg = strdup(notifyMsg);
+		msg = notifyMsg;
 		if(msg !=NULL)
 		{
 			pthread_mutex_unlock (&notify_mut);
@@ -1473,7 +1473,7 @@ void* processWebConfigNotification()
 				}
 			}
 			//pthread_mutex_unlock (&notify_mut);
-			WebcfgDebug("processWebConfigNotification mutex unlock\n");
+			//WebcfgDebug("processWebConfigNotification mutex unlock\n");
 		}
 		else
 		{
