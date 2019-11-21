@@ -169,7 +169,7 @@ void setValues(const param_t paramVal[], const unsigned int paramCount, const WE
 
         if(error != 1)
         {
-                WalPrint("Number of parameter groups : %d\n",compCount);
+                WalInfo("Number of parameter groups : %d\n",compCount);
 
                 val = (param_t **) malloc(sizeof(param_t *) * compCount);
                 memset(val,0,(sizeof(param_t *) * compCount));
@@ -182,7 +182,7 @@ void setValues(const param_t paramVal[], const unsigned int paramCount, const WE
                 
                 for(j = 0; j < compCount ;j++)
                 {
-                        WalPrint("ParamGroup[%d].comp_name :%s, ParamGroup[%d].dbus_path :%s, ParamGroup[%d].parameterCount :%d\n",j,ParamGroup[j].comp_name, j,ParamGroup[j].dbus_path, j,ParamGroup[j].parameterCount);
+                        WalInfo("ParamGroup[%d].comp_name :%s, ParamGroup[%d].dbus_path :%s, ParamGroup[%d].parameterCount :%d\n",j,ParamGroup[j].comp_name, j,ParamGroup[j].dbus_path, j,ParamGroup[j].parameterCount);
 
                         val[j] = (param_t *) malloc(sizeof(param_t) * ParamGroup[j].parameterCount);
                         rollbackVal[j] = (param_t *) malloc(sizeof(param_t) * ParamGroup[j].parameterCount);
@@ -312,10 +312,14 @@ void setValues(const param_t paramVal[], const unsigned int paramCount, const WE
                                 }
                         }
                         //Got wifi index and do SET
+			WalInfo("Proceeding to wifi index and SET\n");
                         if(indexWifi !=-1)
                         {
-                                WalPrint("Wifi SET at end\n");
-                                WalPrint("ParamGroup[%d].comp_name : %s\n",indexWifi,ParamGroup[indexWifi].comp_name);
+                                WalInfo("Wifi SET at end\n");
+                                WalInfo("ParamGroup[%d].comp_name : %s\n",indexWifi,ParamGroup[indexWifi].comp_name);
+				 WalInfo("sleep of 180s before wifi SET\n");
+				 sleep(180);
+				 WalInfo("sleep of 180s done, proceed to wifi SET\n");
                                 ret = setParamValues(val[indexWifi], ParamGroup[indexWifi].comp_name,ParamGroup[indexWifi].dbus_path, ParamGroup[indexWifi].parameterCount, setType, transactionId);
                                 if(ret != CCSP_SUCCESS)
                                 {
@@ -837,10 +841,13 @@ static void *applyWiFiSettingsTask()
 	//Identify the radio and apply settings
 	while(1)
 	{
-		WalPrint("Before cond wait in applyWiFiSettings\n");
+		WalInfo("Before cond wait in applyWiFiSettings\n");
 		pthread_cond_wait(&applySetting_cond, &applySetting_mutex);
+		WalInfo("Sleep of 60s in applyWiFiSettings\n");
+		sleep(60);
+		WalInfo("Sleep of 60s done, proceeding to applyWiFiSettings \n");
 		applySettingsFlag = TRUE;
-		WalPrint("applySettingsFlag is set to TRUE\n");
+		WalInfo("applySettingsFlag is set to TRUE\n");
 		getCurrentTime(startPtr);
 		WalPrint("After cond wait in applyWiFiSettings\n");
 		if(bRadioRestartEn)
