@@ -10,7 +10,7 @@
 /**
  * @brief Enables or disables debug logs.
  */
-#define WebConfigLog(...)       __cimplog_generic(LOGGING_MODULE, __VA_ARGS__)
+#define WebConfigLog(...)       __cimplog_generic("WEBPA", __VA_ARGS__)
 
 #define WebcfgError(...)	cimplog_error(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
 #define WebcfgInfo(...)		cimplog_info(WEBCFG_LOGGING_MODULE, __VA_ARGS__)
