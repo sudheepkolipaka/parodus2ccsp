@@ -50,16 +50,17 @@ void processMultipartDocument()
 		WebConfigLog("\nProvide config URL\n");
 		return;
 	}
-	configRet = webcfg_http_request(url, &webConfigData, r_count, &res_code, interface);
+	configRet = webcfg_http_request(url, &webConfigData, r_count, &res_code, interface, &subfileData, &len);
 	if(configRet == 0)
 	{
 		WebConfigLog("config ret success\n");
 	
-		filename = malloc(sizeof(char)*6);
-		snprintf(filename,6,"%s%d","/tmp/part",j);
-	        status = subdocparse(filename,&subfileData,&len);
-		if(status)
-		{
+		//filename = malloc(sizeof(char)*6);
+		//snprintf(filename,6,"%s%d","/tmp/part",j);
+	       // status = subdocparse(filename,&subfileData,&len);
+		//if(status)
+		//{
+			WebConfigLog("len is %d\n" , len);
 			subdbuff = ( void*)subfileData;
 
 			WebConfigLog("Proceed to setValues\n");
@@ -90,7 +91,7 @@ void processMultipartDocument()
 	                }
 			//Test purpose to decode config doc from webpa. This is to confirm data sent from webpa is proper
 			WebConfigLog("--------------decode config doc from webpa-------------\n");
-			subdbuff = ( void*)reqParam;
+			//subdbuff = ( void*)reqParam;
 
 			//decode root doc
 			WebConfigLog("--------------decode root doc-------------\n");
@@ -108,7 +109,7 @@ void processMultipartDocument()
 			}
 			WebConfigLog("--------------decode root doc done-------------\n");
 			/*WAL_FREE(reqParam);*/
-		}
+		//}
 		
 	}	
 	else

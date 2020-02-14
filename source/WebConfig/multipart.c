@@ -17,6 +17,7 @@
 #include "multipart.h"
 #include <string.h>
 #include <stdlib.h>
+#include "webcfgparam.h"
 /*----------------------------------------------------------------------------*/
 /*                                   Macros                                   */
 /*----------------------------------------------------------------------------*/
@@ -47,6 +48,7 @@ size_t headr_callback(char *buffer, size_t size, size_t nitems);
 void stripspaces(char *str, char **final_str);
 void createCurlHeader( struct curl_slist *list, struct curl_slist **header_list);
 void parse_multipart(char *ptr, int no_of_bytes, int part_no);
+void print_multipart(char *ptr, int no_of_bytes, multipartdocs_t *m, int *no_of_subdocbytes);
 /*----------------------------------------------------------------------------*/
 /*                             External Functions                             */
 /*----------------------------------------------------------------------------*/
@@ -57,14 +59,14 @@ void parse_multipart(char *ptr, int no_of_bytes, int part_no);
 * @param[in] r_count Number of curl retries on ipv4 and ipv6 mode during failure
 * @return returns 0 if success, otherwise failed to fetch auth token and will be retried.
 */
-int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long *code, char *interface)
+int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long *code, char *interface, char** sub_buff, int *sub_len)
 {
 	CURL *curl;
 	CURLcode res;
 	CURLcode time_res;
 	struct curl_slist *list = NULL;
 	struct curl_slist *headers_list = NULL;
-	int rv=1;
+	int rv=1,count =0;
 	double total;
 	long response_code = 0;
 	char *ct = NULL;
@@ -79,6 +81,7 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 	data.size = 0;
 	void * dataVal = NULL;
 	curl = curl_easy_init();
+	int subdocbytes =0;
 	if(curl)
 	{
 		//this memory will be dynamically grown by write call back fn as required
@@ -161,7 +164,7 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 		}
 		else
 		{
-                        WebConfigLog("checking content type\n");
+			WebConfigLog("checking content type\n");
 			content_res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
 			WebConfigLog("ct is %s, content_res is %d\n", ct, content_res);
 			// fetch boundary
@@ -179,74 +182,89 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 			last_line_boundary  = (char *)malloc(sizeof(char) * (boundary_len + 5));
 			snprintf(last_line_boundary,boundary_len+5,"--%s--",boundary);
 			WebConfigLog( "last_line_boundary %s, len %ld\n", last_line_boundary, strlen(last_line_boundary) );
-
 			// Use --boundary to split
 			str_body = malloc(sizeof(char) * data.size + 1);
 			str_body = memcpy(str_body, data.data, data.size + 1);
 			int num_of_parts = 0;
 			char *ptr_lb=str_body;
-			int index1=0, index2 =0;
+			char *ptr_lb1=str_body;
+			char *ptr_count = str_body;
+			int index1=0, index2 =0 ;
+			//////////////////////////////////////////////////////////////////For Subdocs count
 
-			while((ptr_lb - str_body) < (int)data.size) {
-				ptr_lb = memchr(ptr_lb, '-', data.size - (ptr_lb - str_body));
-				if(0 == memcmp(ptr_lb, last_line_boundary, strlen(last_line_boundary)))
-				{
-					//only one doc, so ending part is last boundary
-					if(num_of_parts == 1)
-					{
-						index2 = index2+(strlen(line_boundary));
-					}
-					else
-					{
-						num_of_parts++;
-					}
-					WebConfigLog("last line boundary match found at location %ld\n", ptr_lb-str_body);
-					if(num_of_parts % 2 ==0 ) {
-						index2 = ptr_lb-str_body-strlen(line_boundary);
-						WebConfigLog("index2 %d\n",index2);
-						parse_multipart(str_body+index1,index2 - index1 - 1, num_of_parts);
-					}
-					else {
-						index1 = ptr_lb-str_body;
-						WebConfigLog("index1 %d\n",index1);
-						parse_multipart(str_body+index2,index1 - index2 - 1,num_of_parts);
-					}
-
-					break;
-
-				}
-				else if(0 == memcmp(ptr_lb, line_boundary, strlen(line_boundary)))
+			while((ptr_count - str_body) < (int)data.size )
+			{  
+				if(0 == memcmp(ptr_count, last_line_boundary, strlen(last_line_boundary)))
 				{
 					num_of_parts++;
-					WebConfigLog("%d line boundary match found at location %ld\n", num_of_parts, ptr_lb-str_body);
-					ptr_lb = ptr_lb + strlen(line_boundary);
-					if(num_of_parts % 2 ==0 ) {
-						index2 = ptr_lb-str_body-strlen(line_boundary);
-						WebConfigLog("index2 %d\n",index2);
-						parse_multipart(str_body+index1,index2 - index1 - 1,num_of_parts);
-						index2 = index2+strlen(line_boundary);
-						WebConfigLog("index2 %d\n",index2);
-					}
-					else {
-						index1 = ptr_lb-str_body;
-						WebConfigLog("index1 %d\n",index1);
-					}
+					break;
 				}
-				else
+				else if(0 == memcmp(ptr_count, line_boundary, strlen(line_boundary)))
 				{
-					WebConfigLog("No match for line boundary\n");
-					ptr_lb++;
-					//break;
+					num_of_parts++;
 				}
+				ptr_count++;
 			}
+			WebConfigLog("Size of the docs is :%d", (num_of_parts-1));
 
-			WebConfigLog("Number of sub docs %d\n",num_of_parts-1);
-			*configData=str_body;
+			/////////////////////////////////////////////////////////////////////////////////////////////////
 
+			multipart_t *mp = NULL;
+			mp = (multipart_t *) malloc (sizeof(multipart_t));
+			mp->entries = (multipartdocs_t *) malloc(sizeof(multipartdocs_t )*(num_of_parts-1) ); 
+			memset( mp->entries, 0, sizeof(multipartdocs_t)*(num_of_parts-1)  );
+			num_of_parts = 0;
+			///Scanning each lines with \n as delimiter
+			while((ptr_lb - str_body) < (int)data.size)
+			{
+				if(0 == memcmp(ptr_lb, last_line_boundary, strlen(last_line_boundary)))
+				{
+					break;
+				}
+
+				ptr_lb = memchr(ptr_lb, '\n', data.size - (ptr_lb - str_body));
+				// printf("printing newline: %ld\n",ptr_lb-str_body); 
+				ptr_lb1 = memchr(ptr_lb+1, '\n', data.size - (ptr_lb - str_body));
+				// printf("printing newline2: %ld\n",ptr_lb1-str_body);
+				index2 = ptr_lb1-str_body;
+				index1 = ptr_lb-str_body;
+				//printf("Index1 : %d\n",index1);
+				// printf("Index2 : %d\n",index2);
+				//printf("Bytes : %d\n",index2 - index1);
+				//printf("Parts : %d\n",num_of_parts);
+				print_multipart(str_body+index1+1,index2 - index1 - 1, &mp->entries[count], &subdocbytes);
+				ptr_lb++;
+				num_of_parts++;
+				if(6 == num_of_parts)
+				{
+				    num_of_parts = 0;
+				    count++;
+				}
+			}                    			
+		        WebConfigLog("Data size is : %d\n",(int)data.size);
+			for(int m = 0 ; m<=(count-1); m++)
+			{
+				WebConfigLog("mp->entries[%d].name_space %s\n", m, mp->entries[m].name_space);
+				WebConfigLog("mp->entries[%d].etag %s\n" ,m,  mp->entries[m].etag);
+				WebConfigLog("mp->entries[%d].data %s\n" ,m,  mp->entries[m].data);
+
+				WebConfigLog("subdocbytes is %d\n", subdocbytes);
+
+				*sub_buff = mp->entries[m].data;
+				WebConfigLog("After sub_buff\n");
+				*sub_len = subdocbytes;
+				WebConfigLog("*sub_len %d\n", *sub_len);
+				//WebConfigLog("doc writeToFile %s\n", docfile);
+				//writeToFile(docfile,mp->entries[m].data,subdocbytes);
+
+				//printf("Number of sub docs %d\n",((num_of_parts-2)/6));
+				*configData=str_body;
+
+			}
+			WEBCFG_FREE(data.data);
+			curl_easy_cleanup(curl);
+			rv=0;
 		}
-		WEBCFG_FREE(data.data);
-		curl_easy_cleanup(curl);
-		rv=0;
 	}
 	else
 	{
@@ -434,6 +452,43 @@ void parse_multipart(char *ptr, int no_of_bytes, int part_no)
 	writeToFile(filename,ptr,no_of_bytes);
 }
 
+void print_multipart(char *ptr, int no_of_bytes, multipartdocs_t *m, int *no_of_subdocbytes)
+{
+	printf("########################################\n");
+	printf("\n");
+	printf("\n");
+	void * mulsubdoc;
+	// char* header_value = NULL;
+
+	printf("*********ptr is %s************\n", ptr);
+
+	////////////////////////////////////////////////////////////for storing respective values
+	if(strstr(ptr,"Namespace"))
+	{
+		m->name_space = strndup(ptr,no_of_bytes);
+	}
+	else if(strstr(ptr,"Etag"))
+	{
+		m->etag = strndup(ptr,no_of_bytes);
+	}
+	else if(strstr(ptr,"parameters"))
+	{
+		m->data = ptr;
+		mulsubdoc = (void *) ptr;
+		webcfgparam_convert( mulsubdoc, no_of_bytes );
+		*no_of_subdocbytes = no_of_bytes;
+		WebConfigLog("*no_of_subdocbytes is %d\n", *no_of_subdocbytes);
+	}
+
+	///////////////////////////////////////////////////////////////
+
+	printf("\n");
+	printf("\n");
+	printf("########################################\n");
+	
+}
+
+
 int subdocparse(char *filename, char **data, int *len)
 {
 	FILE *fp = fopen(filename, "rb");
@@ -441,7 +496,7 @@ int subdocparse(char *filename, char **data, int *len)
 	char line[256];
 	if (fp == NULL)
 	{
-		printf("subdocparse Failed to open file %s\n", filename);
+		WebConfigLog("subdocparse Failed to open file %s\n", filename);
 		return 0;
 	}
 	else
