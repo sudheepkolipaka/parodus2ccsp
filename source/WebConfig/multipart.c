@@ -205,7 +205,7 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 				}
 				ptr_count++;
 			}
-			WebConfigLog("Size of the docs is :%d", (num_of_parts-1));
+			WebConfigLog("Size of the docs is :%d\n", (num_of_parts-1));
 
 			/////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -396,7 +396,7 @@ void createCurlHeader( struct curl_slist *list, struct curl_slist **header_list)
 	WebConfigLog("Start of createCurlHeader\n");
 
 	// Read token from file
-	readFromFile("/tmp/webcfg_token", &token, &len );
+	readFromFile("/nvram/webcfg_token", &token, &len );
 	strncpy(webpa_aut_token, token, len);
 	if(strlen(webpa_aut_token)==0)
 	{

@@ -44,6 +44,10 @@ void processMultipartDocument()
 	param_t *reqParam = NULL;
 	WDMP_STATUS ret = WDMP_FAILURE;
 	int ccspStatus=0;
+	char* b64buffer =  NULL;
+	size_t encodeSize = 0;
+	int k=0;
+	size_t subLen=0;
 
 	if(url == NULL)
 	{
@@ -55,61 +59,80 @@ void processMultipartDocument()
 	{
 		WebConfigLog("config ret success\n");
 	
-		//filename = malloc(sizeof(char)*6);
-		//snprintf(filename,6,"%s%d","/tmp/part",j);
-	       // status = subdocparse(filename,&subfileData,&len);
-		//if(status)
-		//{
-			WebConfigLog("len is %d\n" , len);
-			subdbuff = ( void*)subfileData;
+		WebConfigLog("len is %d\n" , len);
+		subLen = (size_t) len;
+		subdbuff = ( void*)subfileData;
+		printf("subLen is %ld\n", subLen);
 
-			WebConfigLog("Proceed to setValues\n");
-			
-			reqParam = (param_t *) malloc(sizeof(param_t));
+		/*********** base64 encode *****************/
+		printf("-----------Start of Base64 Encode ------------\n");
+		encodeSize = b64_get_encoded_buffer_size( subLen );
+		printf("encodeSize is %d\n", encodeSize);
+		b64buffer = malloc(encodeSize + 1);
+		b64_encode(subfileData, subLen, b64buffer);
+		b64buffer[encodeSize] = '\0' ;
 
-			reqParam[0].name = "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.mocaData";
-			reqParam[0].value = subfileData;
-			reqParam[0].type = WDMP_STRING;
+		printf("\n\n b64 encoded data is : ");
+		for(k = 0; k < encodeSize; k++)
+			printf("%c", b64buffer[k]);
 
-			WebConfigLog("Request:> param[0].name = %s\n",reqParam[0].name);
-	        	WebConfigLog("Request:> param[0].value = %s\n",reqParam[0].value);
-	        	WebConfigLog("Request:> param[0].type = %d\n",reqParam[0].type);
+		printf("\nb64 encoded data length is %d\n",k);
+		printf("---------- End of Base64 Encode -------------\n");
 
-	
-			WebcfgInfo("WebConfig SET Request\n");
+		printf("Final Encoded data: %s\n",b64buffer);
+		printf("Final Encoded data length: %d\n",strlen(b64buffer));
+		/*********** base64 encode *****************/
 
-			setValues(reqParam, 1, WEBPA_SET, NULL, NULL, &ret, &ccspStatus);
-			WebcfgInfo("Processed WebConfig SET Request\n");
-			WebcfgInfo("ccspStatus is %d\n", ccspStatus);
-	                if(ret == WDMP_SUCCESS)
-	                {
-	                        WebConfigLog("setValues success. ccspStatus : %d\n", ccspStatus);
-	                }
-	                else
-	                {
-	                      WebConfigLog("setValues Failed. ccspStatus : %d\n", ccspStatus);
-	                }
-			//Test purpose to decode config doc from webpa. This is to confirm data sent from webpa is proper
-			WebConfigLog("--------------decode config doc from webpa-------------\n");
-			//subdbuff = ( void*)reqParam;
 
-			//decode root doc
-			WebConfigLog("--------------decode root doc-------------\n");
-			pm = webcfgparam_convert( subdbuff, len+1 );
+		WebConfigLog("Proceed to setValues\n");
+		reqParam = (param_t *) malloc(sizeof(param_t));
 
-			if ( NULL != pm)
+		reqParam[0].name = "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.mocaData";
+		reqParam[0].value = b64buffer;
+		reqParam[0].type = WDMP_BASE64;
+
+		WebConfigLog("Request:> param[0].name = %s\n",reqParam[0].name);
+		WebConfigLog("Request:> param[0].value = %s\n",reqParam[0].value);
+		WebConfigLog("Request:> param[0].type = %d\n",reqParam[0].type);
+
+		WebcfgInfo("WebConfig SET Request\n");
+
+		setValues(reqParam, 1, WEBPA_SET, NULL, NULL, &ret, &ccspStatus);
+		WebcfgInfo("Processed WebConfig SET Request\n");
+		WebcfgInfo("ccspStatus is %d\n", ccspStatus);
+                if(ret == WDMP_SUCCESS)
+                {
+                        WebConfigLog("setValues success. ccspStatus : %d\n", ccspStatus);
+                }
+                else
+                {
+                      WebConfigLog("setValues Failed. ccspStatus : %d\n", ccspStatus);
+                }
+		//Test purpose to decode config doc from webpa. This is to confirm data sent from webpa is proper
+		WebConfigLog("--------------decode config doc from webpa-------------\n");
+
+		//decode root doc
+		WebConfigLog("--------------decode root doc-------------\n");
+		pm = webcfgparam_convert( subdbuff, len+1 );
+
+		if ( NULL != pm)
+		{
+			for(i = 0; i < (int)pm->entries_count ; i++)
 			{
-				for(i = 0; i < (int)pm->entries_count ; i++)
-				{
-					WebConfigLog("pm->entries[%d].name %s\n", i, pm->entries[i].name);
-					WebConfigLog("pm->entries[%d].value %s\n" , i, pm->entries[i].value);
-					WebConfigLog("pm->entries[%d].type %d\n", i, pm->entries[i].type);
-				}
-				webcfgparam_destroy( pm );
+				WebConfigLog("pm->entries[%d].name %s\n", i, pm->entries[i].name);
+				WebConfigLog("pm->entries[%d].value %s\n" , i, pm->entries[i].value);
+				WebConfigLog("pm->entries[%d].type %d\n", i, pm->entries[i].type);
 			}
-			WebConfigLog("--------------decode root doc done-------------\n");
-			/*WAL_FREE(reqParam);*/
-		//}
+			webcfgparam_destroy( pm );
+		}
+		WebConfigLog("--------------decode root doc done-------------\n");
+		/*WAL_FREE(reqParam);
+		if(b64buffer != NULL)
+		{
+			free(b64buffer);
+			b64buffer = NULL;
+		}
+		*/
 		
 	}	
 	else
