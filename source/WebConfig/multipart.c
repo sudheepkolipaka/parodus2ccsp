@@ -232,7 +232,7 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 				// printf("Index2 : %d\n",index2);
 				//printf("Bytes : %d\n",index2 - index1);
 				//printf("Parts : %d\n",num_of_parts);
-				print_multipart(str_body+index1+1,index2 - index1 - 1, &mp->entries[count], &subdocbytes);
+				print_multipart(str_body+index1+1,index2 - index1 - 2, &mp->entries[count], &subdocbytes);
 				ptr_lb++;
 				num_of_parts++;
 				if(6 == num_of_parts)

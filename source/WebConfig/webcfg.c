@@ -62,25 +62,25 @@ void processMultipartDocument()
 		WebConfigLog("len is %d\n" , len);
 		subLen = (size_t) len;
 		subdbuff = ( void*)subfileData;
-		printf("subLen is %ld\n", subLen);
+		WebConfigLog("subLen is %ld\n", subLen);
 
 		/*********** base64 encode *****************/
-		printf("-----------Start of Base64 Encode ------------\n");
+		WebConfigLog("-----------Start of Base64 Encode ------------\n");
 		encodeSize = b64_get_encoded_buffer_size( subLen );
-		printf("encodeSize is %d\n", encodeSize);
+		WebConfigLog("encodeSize is %d\n", encodeSize);
 		b64buffer = malloc(encodeSize + 1);
 		b64_encode(subfileData, subLen, b64buffer);
 		b64buffer[encodeSize] = '\0' ;
 
-		printf("\n\n b64 encoded data is : ");
+		WebConfigLog("\n\n b64 encoded data is : ");
 		for(k = 0; k < encodeSize; k++)
-			printf("%c", b64buffer[k]);
+			WebConfigLog("%c", b64buffer[k]);
 
-		printf("\nb64 encoded data length is %d\n",k);
-		printf("---------- End of Base64 Encode -------------\n");
+		WebConfigLog("\nb64 encoded data length is %d\n",k);
+		WebConfigLog("---------- End of Base64 Encode -------------\n");
 
-		printf("Final Encoded data: %s\n",b64buffer);
-		printf("Final Encoded data length: %d\n",strlen(b64buffer));
+		WebConfigLog("Final Encoded data: %s\n",b64buffer);
+		WebConfigLog("Final Encoded data length: %d\n",strlen(b64buffer));
 		/*********** base64 encode *****************/
 
 
