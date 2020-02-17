@@ -25,10 +25,11 @@
 #include "webpa_adapter.h"
 #include "webpa_internal.h"
 
+#define FILE_URL "/tmp/webcfg_url"
+
 char *url = NULL;
 char *interface = NULL;
 
-#define FILE_URL "/tmp/webcfg_url"
 void processMultipartDocument()
 {
 	int r_count=0;
@@ -46,8 +47,11 @@ void processMultipartDocument()
 	int ccspStatus=0;
 	char* b64buffer =  NULL;
 	size_t encodeSize = 0;
-	int k=0;
 	size_t subLen=0;
+
+	struct timespec start,end,*startPtr,*endPtr;
+        startPtr = &start;
+        endPtr = &end;
 
 	if(url == NULL)
 	{
@@ -58,13 +62,12 @@ void processMultipartDocument()
 	if(configRet == 0)
 	{
 		WebConfigLog("config ret success\n");
-	
-		WebConfigLog("len is %d\n" , len);
 		subLen = (size_t) len;
 		subdbuff = ( void*)subfileData;
 		WebConfigLog("subLen is %ld\n", subLen);
 
 		/*********** base64 encode *****************/
+		getCurrentTime(startPtr);
 		WebConfigLog("-----------Start of Base64 Encode ------------\n");
 		encodeSize = b64_get_encoded_buffer_size( subLen );
 		WebConfigLog("encodeSize is %d\n", encodeSize);
@@ -72,12 +75,9 @@ void processMultipartDocument()
 		b64_encode(subfileData, subLen, b64buffer);
 		b64buffer[encodeSize] = '\0' ;
 
-		WebConfigLog("\n\n b64 encoded data is : ");
-		for(k = 0; k < encodeSize; k++)
-			WebConfigLog("%c", b64buffer[k]);
-
-		WebConfigLog("\nb64 encoded data length is %d\n",k);
 		WebConfigLog("---------- End of Base64 Encode -------------\n");
+		getCurrentTime(endPtr);
+                WebConfigLog("Base64 Encode Elapsed time : %ld ms\n", timeValDiff(startPtr, endPtr));
 
 		WebConfigLog("Final Encoded data: %s\n",b64buffer);
 		WebConfigLog("Final Encoded data length: %d\n",strlen(b64buffer));
@@ -148,8 +148,7 @@ static void *WebConfigMultipartTask()
 	WebConfigLog("Mutlipart WebConfigMultipartTask\n");
 
 	// Read url from file
-	//readFromFile(FILE_URL, &url, &len );
-	url = strdup("https://cpe-config-redn.xdp.comcast.net/api/v2/device/b42a0e85e79a/config?group_id=moca");
+	readFromFile(FILE_URL, &url, &len );
 	if(strlen(url)==0)
 	{
 		WebConfigLog("<url> is NULL.. add url in /tmp/webcfg_url file\n");

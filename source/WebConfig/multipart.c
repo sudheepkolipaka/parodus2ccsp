@@ -190,8 +190,8 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 			char *ptr_lb1=str_body;
 			char *ptr_count = str_body;
 			int index1=0, index2 =0 ;
-			//////////////////////////////////////////////////////////////////For Subdocs count
 
+			/* For Subdocs count */
 			while((ptr_count - str_body) < (int)data.size )
 			{  
 				if(0 == memcmp(ptr_count, last_line_boundary, strlen(last_line_boundary)))
@@ -206,8 +206,7 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 				ptr_count++;
 			}
 			WebConfigLog("Size of the docs is :%d\n", (num_of_parts-1));
-
-			/////////////////////////////////////////////////////////////////////////////////////////////////
+			/* For Subdocs count */
 
 			multipart_t *mp = NULL;
 			mp = (multipart_t *) malloc (sizeof(multipart_t));
@@ -223,15 +222,9 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 				}
 
 				ptr_lb = memchr(ptr_lb, '\n', data.size - (ptr_lb - str_body));
-				// printf("printing newline: %ld\n",ptr_lb-str_body); 
 				ptr_lb1 = memchr(ptr_lb+1, '\n', data.size - (ptr_lb - str_body));
-				// printf("printing newline2: %ld\n",ptr_lb1-str_body);
 				index2 = ptr_lb1-str_body;
 				index1 = ptr_lb-str_body;
-				//printf("Index1 : %d\n",index1);
-				// printf("Index2 : %d\n",index2);
-				//printf("Bytes : %d\n",index2 - index1);
-				//printf("Parts : %d\n",num_of_parts);
 				print_multipart(str_body+index1+1,index2 - index1 - 2, &mp->entries[count], &subdocbytes);
 				ptr_lb++;
 				num_of_parts++;
@@ -248,16 +241,9 @@ int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long
 				WebConfigLog("mp->entries[%d].etag %s\n" ,m,  mp->entries[m].etag);
 				WebConfigLog("mp->entries[%d].data %s\n" ,m,  mp->entries[m].data);
 
-				WebConfigLog("subdocbytes is %d\n", subdocbytes);
-
 				*sub_buff = mp->entries[m].data;
-				WebConfigLog("After sub_buff\n");
 				*sub_len = subdocbytes;
 				WebConfigLog("*sub_len %d\n", *sub_len);
-				//WebConfigLog("doc writeToFile %s\n", docfile);
-				//writeToFile(docfile,mp->entries[m].data,subdocbytes);
-
-				//printf("Number of sub docs %d\n",((num_of_parts-2)/6));
 				*configData=str_body;
 
 			}
@@ -375,7 +361,7 @@ int readFromFile(char *filename, char **data, int *len)
 	ch_count = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
 	*data = (char *) malloc(sizeof(char) * (ch_count + 1));
-	fread(*data, 1, ch_count,fp);
+	fread(*data, 1, ch_count-1,fp);
 	*len = ch_count;
 	(*data)[ch_count] ='\0';
 	fclose(fp);
@@ -454,15 +440,8 @@ void parse_multipart(char *ptr, int no_of_bytes, int part_no)
 
 void print_multipart(char *ptr, int no_of_bytes, multipartdocs_t *m, int *no_of_subdocbytes)
 {
-	printf("########################################\n");
-	printf("\n");
-	printf("\n");
 	void * mulsubdoc;
-	// char* header_value = NULL;
 
-	printf("*********ptr is %s************\n", ptr);
-
-	////////////////////////////////////////////////////////////for storing respective values
 	if(strstr(ptr,"Namespace"))
 	{
 		m->name_space = strndup(ptr,no_of_bytes);
@@ -479,13 +458,6 @@ void print_multipart(char *ptr, int no_of_bytes, multipartdocs_t *m, int *no_of_
 		*no_of_subdocbytes = no_of_bytes;
 		WebConfigLog("*no_of_subdocbytes is %d\n", *no_of_subdocbytes);
 	}
-
-	///////////////////////////////////////////////////////////////
-
-	printf("\n");
-	printf("\n");
-	printf("########################################\n");
-	
 }
 
 
