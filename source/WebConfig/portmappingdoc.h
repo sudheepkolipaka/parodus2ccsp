@@ -13,27 +13,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __WEBCFGPARAM_H__
-#define __WEBCFGPARAM_H__
+#ifndef __PORTMAPPINGDOC_H__
+#define __PORTMAPPINGDOC_H__
 
 #include <stdint.h>
 #include <stdlib.h>
-
+#include <msgpack.h>
 typedef struct
 {
-    char *name;
-    char *value;
-    int   value_size;
-    uint16_t type;
-} wparam_t;
+    char      *internal_client; 
+    char      *enable;       
+    char  *external_port_end_range;    
+    char      *protocol;
+    char      *description;
+    char *external_port;
+} portdoc_t;
 
 typedef struct {
-    wparam_t *entries;
+    portdoc_t *entries;       
     size_t      entries_count;
-} webcfgparam_t;
+} portmappingdoc_t;
 
 /**
- *  This function converts a msgpack buffer into an webcfgparam_t structure
+ *  This function converts a msgpack buffer into an portmappingdoc_t structure
  *  if possible.
  *
  *  @param buf the buffer to convert
@@ -41,14 +43,14 @@ typedef struct {
  *
  *  @return NULL on error, success otherwise
  */
-webcfgparam_t* webcfgparam_convert( const void *buf, size_t len );
+portmappingdoc_t* portmappingdoc_convert( const void *buf, size_t len );
 
 /**
- *  This function destroys an webcfgparam_t object.
+ *  This function destroys an portmappingdoc_t object.
  *
- *  @param e the webcfgparam to destroy
+ *  @param e the portmappingdoc to destroy
  */
-void webcfgparam_destroy( webcfgparam_t *d );
+void portmappingdoc_destroy( portmappingdoc_t *d );
 
 /**
  *  This function returns a general reason why the conversion failed.
@@ -57,6 +59,6 @@ void webcfgparam_destroy( webcfgparam_t *d );
  *
  *  @return the constant string (do not alter or free) describing the error
  */
-const char* webcfgparam_strerror( int errnum );
+const char* portmappingdoc_strerror( int errnum );
 
 #endif

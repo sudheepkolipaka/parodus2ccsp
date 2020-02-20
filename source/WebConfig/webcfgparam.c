@@ -70,7 +70,7 @@ void webcfgparam_destroy( webcfgparam_t *pm )
                 free( pm->entries[i].name );
             }
 	    if( NULL != pm->entries[i].value ) {
-                free( pm->entries[i].value );
+              //  free( pm->entries[i].value );
             }
         }
         if( NULL != pm->entries ) {
@@ -146,11 +146,15 @@ int process_params( wparam_t *e, msgpack_object_map *map )
 		    //printf("objects_left after name %d\n", objects_left);
                 }
 		if( 0 == match(p, "value") ) {
-                    e->value = strndup( p->val.via.str.ptr, p->val.via.str.size );
+                    //e->value = strndup( p->val.via.str.ptr, p->val.via.str.size );
+		    e->value = (char*)p->val.via.str.ptr;
+		    e->value_size =(int) p->val.via.str.size;
+		    printf("e->value_size is %d\n", e->value_size);
 		    //printf("e->value is %s\n", e->value);
                     objects_left &= ~(1 << 2);
 		    //printf("objects_left after value %d\n", objects_left);
                 }
+	
             }
         }
         p++;
