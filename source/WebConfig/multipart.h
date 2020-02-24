@@ -29,6 +29,7 @@ typedef struct
 
 typedef struct {
     multipartdocs_t *entries;
+    size_t   entries_count;
 } multipart_t;
 
 
@@ -39,8 +40,8 @@ typedef struct {
  *  @return 0 on success, error otherwise
  */
 int webcfg_http_request(char *webConfigURL, char **configData, int r_count, long *code, char *interface, char** sub_buff, int *sub_len);
-int subdocparse(char *filename,char **data, int *len);
-
+int writeToFile(char *filename, char *data, int len);
+int readFromFile(char *filename, char **data, int *len);
 
 
 #endif

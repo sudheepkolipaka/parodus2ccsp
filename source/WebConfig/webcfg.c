@@ -125,7 +125,7 @@ void processMultipartDocument()
 				WebConfigLog("pm->entries[%d].type %d\n", i, pm->entries[i].type);
 			}
 			//webcfgparam_destroy( pm );
-		}
+		//}
 		WebConfigLog("--------------decode root doc done-------------\n");
 		WebConfigLog("blob_size is %d\n", pm->entries[0].value_size);
 
@@ -160,6 +160,11 @@ void processMultipartDocument()
 			b64buffer = NULL;
 		}
 		*/
+		}
+		else
+		{
+			WebConfigLog("pm is NULL, root doc failed\n");
+		}
 	}	
 	else
 	{
