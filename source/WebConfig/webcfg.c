@@ -24,7 +24,7 @@
 #include "webconfig_log.h"
 #include "webpa_adapter.h"
 #include "webpa_internal.h"
-//#include "../src/macbindingdoc.h"
+#include "macbindingdoc.h"
 #include "portmappingdoc.h"
 
 #define FILE_URL "/tmp/webcfg_url"
@@ -124,46 +124,65 @@ void processMultipartDocument()
 				WebConfigLog("pm->entries[%d].value %s\n" , i, pm->entries[i].value);
 				WebConfigLog("pm->entries[%d].type %d\n", i, pm->entries[i].type);
 			}
-			//webcfgparam_destroy( pm );
-		//}
-		WebConfigLog("--------------decode root doc done-------------\n");
-		WebConfigLog("blob_size is %d\n", pm->entries[0].value_size);
+			WebConfigLog("--------------decode root doc done-------------\n");
+			WebConfigLog("blob_size is %d\n", pm->entries[0].value_size);
 
-		/************ portmapping inner blob decode ****************/
+			/************ portmapping inner blob decode ****************/
 
-		portmappingdoc_t *rpm;
-		WebConfigLog("--------------decode blob-------------\n");
-		rpm = portmappingdoc_convert( pm->entries[0].value, pm->entries[0].value_size );
+			/*portmappingdoc_t *rpm;
+			WebConfigLog("--------------decode blob-------------\n");
+			rpm = portmappingdoc_convert( pm->entries[0].value, pm->entries[0].value_size );
 
-		if(NULL != rpm)
-		{
-			WebConfigLog("rpm->entries_count is %ld\n", rpm->entries_count);
-
-			for(i = 0; i < (int)rpm->entries_count ; i++)
+			if(NULL != rpm)
 			{
-				WebConfigLog("rpm->entries[%d].InternalClient %s\n", i, rpm->entries[i].internal_client);
-				WebConfigLog("rpm->entries[%d].ExternalPortEndRange %s\n" , i, rpm->entries[i].external_port_end_range);
-				WebConfigLog("rpm->entries[%d].Enable %s\n", i, rpm->entries[i].enable?"true":"false");
-				WebConfigLog("rpm->entries[%d].Protocol %s\n", i, rpm->entries[i].protocol);
-				WebConfigLog("rpm->entries[%d].Description %s\n", i, rpm->entries[i].description);
-				WebConfigLog("rpm->entries[%d].external_port %s\n", i, rpm->entries[i].external_port);
+				WebConfigLog("rpm->entries_count is %ld\n", rpm->entries_count);
+
+				for(i = 0; i < (int)rpm->entries_count ; i++)
+				{
+					WebConfigLog("rpm->entries[%d].InternalClient %s\n", i, rpm->entries[i].internal_client);
+					WebConfigLog("rpm->entries[%d].ExternalPortEndRange %s\n" , i, rpm->entries[i].external_port_end_range);
+					WebConfigLog("rpm->entries[%d].Enable %s\n", i, rpm->entries[i].enable?"true":"false");
+					WebConfigLog("rpm->entries[%d].Protocol %s\n", i, rpm->entries[i].protocol);
+					WebConfigLog("rpm->entries[%d].Description %s\n", i, rpm->entries[i].description);
+					WebConfigLog("rpm->entries[%d].external_port %s\n", i, rpm->entries[i].external_port);
+				}
+
+				portmappingdoc_destroy( rpm );
+
+			}*/
+			/************ portmapping inner blob decode ****************/
+
+			/************ macbinding inner blob decode ****************/
+
+			macbindingdoc_t *rpm;
+			printf("--------------decode blob-------------\n");
+			rpm = macbindingdoc_convert( pm->entries[0].value, pm->entries[0].value_size );
+			if(NULL != rpm)
+			{
+				printf("rpm->entries_count is %ld\n", rpm->entries_count);
+
+				for(i = 0; i < (int)rpm->entries_count ; i++)
+				{
+					printf("rpm->entries[%d].Yiaddr %s\n", i, rpm->entries[i].yiaddr);
+					printf("rpm->entries[%d].Chaddr %s\n" , i, rpm->entries[i].chaddr);
+				}
+
+				macbindingdoc_destroy( rpm );
 			}
+			/************ macbinding inner blob decode ****************/
 
-			portmappingdoc_destroy( rpm );
-
-		}
-		webcfgparam_destroy( pm );
-		/*WAL_FREE(reqParam);
-		if(b64buffer != NULL)
-		{
-			free(b64buffer);
-			b64buffer = NULL;
-		}
-		*/
+			webcfgparam_destroy( pm );
+			/*WAL_FREE(reqParam);
+			if(b64buffer != NULL)
+			{
+				free(b64buffer);
+				b64buffer = NULL;
+			}
+			*/
 		}
 		else
 		{
-			WebConfigLog("pm is NULL, root doc failed\n");
+			WebConfigLog("pm is NULL, root doc decode failed\n");
 		}
 	}	
 	else
