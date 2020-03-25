@@ -25,7 +25,6 @@
 #define CURL_TIMEOUT_SEC	   25L
 #define CLIENT_CERT_PATH  	   "/etc/clientcert.crt"
 #define CA_CERT_PATH 		   "/etc/ssl/certs/ca-certificates.crt"
-#define WEBCFG_INTERFACE_DEFAULT   "erouter0"
 #define MAX_BUF_SIZE	           256
 #define WEB_CFG_FILE		      "/nvram/webConfig.json"
 #define MAX_HEADER_LEN			4096
@@ -989,15 +988,12 @@ static void get_webCfg_interface(char **interface)
 	else
 	{
 		WebConfigLog("Failed to open device.properties file:%s\n", DEVICE_PROPS_FILE);
-		WebConfigLog("Adding default values for webConfig interface\n");
-		*interface = strdup(WEBCFG_INTERFACE_DEFAULT);
 	}
 
 	if (NULL == *interface)
 	{
-		WebConfigLog("WebConfig interface is not present in device.properties, adding default interface\n");
+		WebConfigLog("WebConfig interface is not present in device.properties\n");
 		
-		*interface = strdup(WEBCFG_INTERFACE_DEFAULT);
 	}
 	else
 	{
