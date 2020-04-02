@@ -60,7 +60,7 @@ int setRfcEnable(BOOL bValue)
 			g_shutdown  = false;
 			pthread_mutex_unlock(get_global_periodicsync_mutex());
 			WebConfigLog("RfcEnable dynamic change from false to true. start initWebConfigMultipartTask.\n");
-			initWebConfigMultipartTask();
+			initWebConfigMultipartTask(1);
 		}
 	}
 	else
